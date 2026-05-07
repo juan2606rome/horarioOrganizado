@@ -112,44 +112,28 @@ async function initDb() {
 
   // No obliga a usar esta parte si ya corriste el SQL en Supabase,
   // pero ayuda a que el servicio arranque sin tablas faltantes.
-  await client.query(`
-    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+await client.query(`
+  ...
 
-    CREATE TABLE IF NOT EXISTS public.team_members (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      color TEXT NOT NULL,
-      initials TEXT NOT NULL,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      active BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+  DROP VIEW IF EXISTS public.calendar_events_with_member;
 
-    CREATE TABLE IF NOT EXISTS public.calendar_events (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      member_id TEXT NOT NULL REFERENCES public.team_members(id) ON UPDATE CASCADE ON DELETE RESTRICT,
-      date DATE NOT NULL,
-      tipo TEXT NOT NULL,
-      departamento TEXT NOT NULL DEFAULT '',
-      municipio TEXT NOT NULL DEFAULT '',
-      detalle TEXT NOT NULL DEFAULT '',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_calendar_events_member_date ON public.calendar_events (member_id, date);
-    CREATE INDEX IF NOT EXISTS idx_calendar_events_date ON public.calendar_events (date);
-    CREATE INDEX IF NOT EXISTS idx_calendar_events_tipo ON public.calendar_events (tipo);
-
-    CREATE OR REPLACE VIEW public.calendar_events_with_member AS
-    SELECT
-      e.*,
-      m.name AS member_name,
-      m.color AS member_color,
-      m.initials AS member_initials
-    FROM public.calendar_events e
-    JOIN public.team_members m ON m.id = e.member_id;
-  `);
+  CREATE VIEW public.calendar_events_with_member AS
+  SELECT
+    e.id,
+    e.member_id,
+    e.date,
+    e.tipo,
+    e.departamento,
+    e.municipio,
+    e.detalle,
+    e.created_at,
+    e.updated_at,
+    m.name AS member_name,
+    m.color AS member_color,
+    m.initials AS member_initials
+  FROM public.calendar_events e
+  JOIN public.team_members m ON m.id = e.member_id;
+`);
 }
 
 async function getMembers() {
