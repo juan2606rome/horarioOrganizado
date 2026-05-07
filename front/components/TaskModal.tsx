@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,11 +12,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { DEPARTMENTS, getMunicipalitiesByDepartment } from '../data/colombiaData';
+import {
+  DEPARTMENTS,
+  getMunicipalitiesByDepartment,
+} from '../data/colombiaData';
 import { EVENT_TYPES, getEventType } from '../data/eventTypes';
 import { CalendarService } from '../services/calendarService';
 import { CalendarEvent, TeamMember } from '../types';
-
 import CustomPicker from './CustomPicker';
 
 interface TaskModalProps {
@@ -30,13 +32,32 @@ interface TaskModalProps {
 }
 
 const MONTHS_ES = [
-  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
 ];
 
 const formatDateLabel = (dateStr: string) => {
   const [year, month, day] = dateStr.split('-').map(Number);
   return `${day} de ${MONTHS_ES[month - 1]} de ${year}`;
+};
+
+const normalizeDepartmentName = (value: string) => {
+  const dept = DEPARTMENTS.find((d) => d.id === value || d.name === value);
+  return dept?.name || value || '';
+};
+
+const getDepartmentObject = (value: string) => {
+  return DEPARTMENTS.find((d) => d.id === value || d.name === value) || null;
 };
 
 const TaskModal: React.FC<TaskModalProps> = ({
@@ -57,10 +78,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
   useEffect(() => {
     if (existingEvent) {
-      setTipo(existingEvent.tipo);
-      setDepartamento(existingEvent.departamento);
-      setMunicipio(existingEvent.municipio);
-      setDetalle(existingEvent.detalle);
+      setTipo(existingEvent.tipo || '');
+      setDepartamento(normalizeDepartmentName(existingEvent.departamento || ''));
+      setMunicipio(existingEvent.municipio || '');
+      setDetalle(existingEvent.detalle || '');
       setMode('view');
     } else {
       setTipo('');
@@ -71,14 +92,36 @@ const TaskModal: React.FC<TaskModalProps> = ({
     }
   }, [existingEvent, visible]);
 
-  const tipoOptions = EVENT_TYPES.map((e) => ({ label: e.label, value: e.id }));
-  const deptOptions = DEPARTMENTS.map((d) => ({ label: d.name, value: d.id }));
-  const munOptions = departamento
-    ? getMunicipalitiesByDepartment(departamento).map((m) => ({
-        label: m,
-        value: m,
-      }))
-    : [];
+  const tipoOptions = useMemo(
+    () => EVENT_TYPES.map((e) => ({ label: e.label, value: e.id })),
+    [],
+  );
+
+  const deptOptions = useMemo(
+    () => DEPARTMENTS.map((d) => ({
+      label: d.name,
+      value: d.name,
+    })),
+    [],
+  );
+
+  const selectedDept = getDepartmentObject(departamento);
+
+  const munOptions = useMemo(() => {
+    if (!selectedDept) return [];
+
+    const byId = getMunicipalitiesByDepartment(selectedDept.id);
+    if (byId.length > 0) {
+      return byId.map((m) => ({ label: m, value: m }));
+    }
+
+    const byName = getMunicipalitiesByDepartment(selectedDept.name);
+    return byName.map((m) => ({ label: m, value: m }));
+  }, [selectedDept]);
+
+  const selectedEventType = tipo ? getEventType(tipo) : null;
+  const isReadOnly = mode === 'view';
+  const titleLabel = date ? formatDateLabel(date) : '';
 
   const handleDeptChange = (val: string) => {
     setDepartamento(val);
@@ -86,41 +129,61 @@ const TaskModal: React.FC<TaskModalProps> = ({
   };
 
   const validate = () => {
-    if (!tipo) { Alert.alert('Error', 'Selecciona el tipo de actividad.'); return false; }
-    if (!departamento) { Alert.alert('Error', 'Selecciona el departamento.'); return false; }
-    if (!municipio) { Alert.alert('Error', 'Selecciona el municipio.'); return false; }
+    if (!tipo) {
+      Alert.alert('Error', 'Selecciona el tipo de actividad.');
+      return false;
+    }
+    if (!departamento) {
+      Alert.alert('Error', 'Selecciona el departamento.');
+      return false;
+    }
+    if (!municipio) {
+      Alert.alert('Error', 'Selecciona el municipio.');
+      return false;
+    }
     return true;
   };
 
-  const handleSave = async () => {
-    if (!validate() || !date || !member) return;
-    setLoading(true);
-    try {
-      const deptName = DEPARTMENTS.find((d) => d.id === departamento)?.name || departamento;
-      if (existingEvent) {
-        await CalendarService.updateEvent(existingEvent.id, {
-          tipo, departamento: deptName, municipio, detalle,
-        });
-      } else {
-        await CalendarService.createEvent({
-          memberId: member.id,
-          date,
-          tipo,
-          departamento: deptName,
-          municipio,
-          detalle,
-        });
-      }
-      onSaved();
-    } catch {
-      Alert.alert('Error', 'No se pudo guardar la actividad.');
-    } finally {
-      setLoading(false);
+const handleSave = async () => {
+  if (!validate() || !date || !member) return;
+
+  setLoading(true);
+  try {
+    const deptName = selectedDept?.name || departamento;
+
+    if (existingEvent) {
+      await CalendarService.updateEvent(existingEvent.id, {
+        tipo,
+        departamento: deptName,
+        municipio,
+        detalle,
+      });
+    } else {
+      await CalendarService.createEvent({
+        memberId: member.id,
+        date,
+        tipo,
+        departamento: deptName,
+        municipio,
+        detalle,
+      });
     }
-  };
+
+    onSaved();
+  } catch (err) {
+    console.error('Error guardando actividad:', err);
+    Alert.alert(
+      'Error',
+      err instanceof Error ? err.message : 'No se pudo guardar la actividad.'
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleDelete = () => {
     if (!existingEvent) return;
+
     Alert.alert(
       'Eliminar actividad',
       '¿Estás seguro de que deseas eliminar esta actividad?',
@@ -145,10 +208,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
     );
   };
 
-  const eventType = tipo ? getEventType(tipo) : null;
-  const isReadOnly = mode === 'view';
-  const deptName = DEPARTMENTS.find((d) => d.id === departamento)?.name || '';
-
   return (
     <Modal
       visible={visible}
@@ -161,7 +220,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.sheet}>
-          {/* Header */}
           <View style={[styles.header, member && { borderTopColor: member.color }]}>
             <View style={styles.headerLeft}>
               {member && (
@@ -169,14 +227,19 @@ const TaskModal: React.FC<TaskModalProps> = ({
                   <Text style={styles.avatarText}>{member.initials}</Text>
                 </View>
               )}
-              <View>
-                <Text style={styles.memberName}>{member?.name}</Text>
-                <Text style={styles.dateLabel}>
-                  {date ? formatDateLabel(date) : ''}
+              <View style={{ flexShrink: 1 }}>
+                <Text style={styles.memberName}>
+                  {member?.name || 'Actividad'}
                 </Text>
+                <Text style={styles.dateLabel}>{titleLabel}</Text>
               </View>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.closeBtn}
+              activeOpacity={0.8}
+            >
               <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -187,43 +250,72 @@ const TaskModal: React.FC<TaskModalProps> = ({
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Event type color badge */}
-            {eventType && (
-              <View style={[styles.typeBadge, { backgroundColor: eventType.bgColor }]}>
-                <View style={[styles.typeDot, { backgroundColor: eventType.color }]} />
-                <Text style={[styles.typeBadgeText, { color: eventType.textColor }]}>
-                  {eventType.label}
+            {selectedEventType && (
+              <View
+                style={[
+                  styles.typeBadge,
+                  { backgroundColor: selectedEventType.bgColor },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.typeDot,
+                    { backgroundColor: selectedEventType.color },
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.typeBadgeText,
+                    { color: selectedEventType.textColor },
+                  ]}
+                >
+                  {selectedEventType.label}
                 </Text>
               </View>
             )}
 
             {isReadOnly ? (
-              /* ── View mode ── */
-              <View style={styles.viewMode}>
-                <InfoRow label="TIPO" value={getEventType(tipo).label} color={eventType?.color} />
-                <InfoRow label="DEPARTAMENTO" value={existingEvent?.departamento || ''} />
-                <InfoRow label="MUNICIPIO" value={existingEvent?.municipio || ''} />
+              <View>
+                <InfoRow
+                  label="TIPO"
+                  value={selectedEventType?.label || tipo || ''}
+                  color={selectedEventType?.color}
+                />
+                <InfoRow
+                  label="DEPARTAMENTO"
+                  value={selectedDept?.name || existingEvent?.departamento || ''}
+                />
+                <InfoRow
+                  label="MUNICIPIO"
+                  value={existingEvent?.municipio || municipio || ''}
+                />
                 {existingEvent?.detalle ? (
-                  <InfoRow label="DETALLE" value={existingEvent.detalle} multiline />
+                  <InfoRow
+                    label="DETALLE"
+                    value={existingEvent.detalle}
+                    multiline
+                  />
                 ) : null}
 
                 <View style={styles.actionRow}>
                   <TouchableOpacity
                     style={styles.editBtn}
                     onPress={() => setMode('edit')}
+                    activeOpacity={0.8}
                   >
                     <Text style={styles.editBtnText}>✏️  Editar</Text>
                   </TouchableOpacity>
+
                   <TouchableOpacity
                     style={styles.deleteBtn}
                     onPress={handleDelete}
+                    activeOpacity={0.8}
                   >
                     <Text style={styles.deleteBtnText}>🗑  Eliminar</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             ) : (
-              /* ── Create/Edit mode ── */
               <View>
                 <CustomPicker
                   label="Tipo de actividad"
@@ -235,7 +327,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
                 <CustomPicker
                   label="Departamento"
-                  value={DEPARTMENTS.find((d) => d.name === departamento)?.id || departamento}
+                  value={departamento}
                   options={deptOptions}
                   onSelect={handleDeptChange}
                   placeholder="Seleccionar departamento..."
@@ -247,7 +339,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
                   value={municipio}
                   options={munOptions}
                   onSelect={setMunicipio}
-                  placeholder={departamento ? 'Seleccionar municipio...' : 'Primero selecciona un departamento'}
+                  placeholder={
+                    departamento
+                      ? 'Seleccionar municipio...'
+                      : 'Primero selecciona un departamento'
+                  }
                   searchable
                 />
 
@@ -270,14 +366,20 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     <TouchableOpacity
                       style={styles.cancelBtn}
                       onPress={() => setMode('view')}
+                      activeOpacity={0.8}
                     >
                       <Text style={styles.cancelBtnText}>Cancelar</Text>
                     </TouchableOpacity>
                   )}
+
                   <TouchableOpacity
-                    style={[styles.saveBtn, { backgroundColor: member?.color || '#2563EB' }]}
+                    style={[
+                      styles.saveBtn,
+                      { backgroundColor: member?.color || '#2563EB' },
+                    ]}
                     onPress={handleSave}
                     disabled={loading}
+                    activeOpacity={0.85}
                   >
                     {loading ? (
                       <ActivityIndicator color="#FFF" />
@@ -303,10 +405,17 @@ interface InfoRowProps {
   color?: string;
   multiline?: boolean;
 }
+
 const InfoRow: React.FC<InfoRowProps> = ({ label, value, color, multiline }) => (
   <View style={styles.infoRow}>
     <Text style={styles.infoLabel}>{label}</Text>
-    <Text style={[styles.infoValue, color ? { color } : {}, multiline && { lineHeight: 22 }]}>
+    <Text
+      style={[
+        styles.infoValue,
+        color ? { color } : null,
+        multiline ? { lineHeight: 22 } : null,
+      ]}
+    >
       {value}
     </Text>
   </View>
@@ -340,6 +449,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
+    paddingRight: 10,
   },
   avatar: {
     width: 44,
@@ -405,7 +516,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  viewMode: {},
   infoRow: {
     marginBottom: 16,
     borderBottomWidth: 1,

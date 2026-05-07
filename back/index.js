@@ -5,7 +5,9 @@ const { Client } = require('pg');
 const isProduction = process.env.NODE_ENV === 'production';
 const PORT = process.env.PORT || 3000;
 
-// ─── CONEXIÓN DB ─────────────────────────────
+// ─────────────────────────────────────────────
+// CONEXIÓN DB
+// ─────────────────────────────────────────────
 const client = new Client(
   isProduction
     ? {
@@ -21,22 +23,34 @@ const client = new Client(
       }
 );
 
-// ─── CORS ───────────────────────────────────
+// ─────────────────────────────────────────────
+// UTILIDADES HTTP
+// ─────────────────────────────────────────────
 const setCorsHeaders = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+  );
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization'
+  );
 };
 
 const sendJSON = (res, status, data) => {
   setCorsHeaders(res);
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+  });
   res.end(JSON.stringify(data));
 };
 
 const sendText = (res, status, html) => {
   setCorsHeaders(res);
-  res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.writeHead(status, {
+    'Content-Type': 'text/html; charset=utf-8',
+  });
   res.end(html);
 };
 
@@ -58,7 +72,7 @@ const readBody = (req) =>
 
       try {
         resolve(JSON.parse(body));
-      } catch (err) {
+      } catch {
         reject(new Error('JSON inválido'));
       }
     });
@@ -66,8 +80,16 @@ const readBody = (req) =>
     req.on('error', reject);
   });
 
-// ─── VALIDACIONES ───────────────────────────
-const isValidDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+// ─────────────────────────────────────────────
+// VALIDACIONES
+// ─────────────────────────────────────────────
+const isValidDate = (value) => {
+  if (typeof value !== 'string') return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+
+  const d = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(d.getTime());
+};
 
 const isValidMonth = (value) => {
   const n = Number(value);
@@ -84,9 +106,7 @@ const rangeForMonth = (year, month) => {
   const m = Number(month);
 
   const start = `${y}-${String(m).padStart(2, '0')}-01`;
-
   const endDate = new Date(y, m, 0);
-
   const end = `${y}-${String(m).padStart(2, '0')}-${String(
     endDate.getDate()
   ).padStart(2, '0')}`;
@@ -94,7 +114,9 @@ const rangeForMonth = (year, month) => {
   return { start, end };
 };
 
-// ─── MAPPERS ────────────────────────────────
+// ─────────────────────────────────────────────
+// MAPPERS
+// ─────────────────────────────────────────────
 const mapMember = (row) => ({
   id: row.id,
   name: row.name,
@@ -120,13 +142,96 @@ const mapEvent = (row) => ({
   updatedAt: row.updated_at,
 });
 
-// ─── DB CONNECT ─────────────────────────────
+// ─────────────────────────────────────────────
+// DB INIT
+// ─────────────────────────────────────────────
 async function initDb() {
   await client.connect();
   console.log('✅ Conectado a PostgreSQL');
 }
 
-// ─── MEMBERS ───────────────────────────────
+// ─────────────────────────────────────────────
+// HELPERS DB
+// ─────────────────────────────────────────────
+async function getEventById(id) {
+  const result = await client.query(
+    `
+    SELECT
+      id,
+      member_id,
+      member_name,
+      member_color,
+      member_initials,
+      date::text AS date,
+      tipo,
+      departamento,
+      municipio,
+      detalle,
+      created_at,
+      updated_at
+    FROM calendar_events_with_member
+    WHERE id = $1
+    `,
+    [id]
+  );
+
+  return result.rows[0] ? mapEvent(result.rows[0]) : null;
+}
+
+async function getEvents(filters = {}) {
+  const { memberId, year, month, id } = filters;
+
+  const clauses = [];
+  const values = [];
+  let idx = 1;
+
+  if (id) {
+    clauses.push(`id = $${idx++}`);
+    values.push(id);
+  }
+
+  if (memberId) {
+    clauses.push(`member_id = $${idx++}`);
+    values.push(memberId);
+  }
+
+  if (year && month) {
+    const { start, end } = rangeForMonth(year, month);
+    clauses.push(`date BETWEEN $${idx++}::date AND $${idx++}::date`);
+    values.push(start, end);
+  } else if (year) {
+    clauses.push(`EXTRACT(YEAR FROM date) = $${idx++}`);
+    values.push(Number(year));
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+
+  const query = `
+    SELECT
+      id,
+      member_id,
+      member_name,
+      member_color,
+      member_initials,
+      date::text AS date,
+      tipo,
+      departamento,
+      municipio,
+      detalle,
+      created_at,
+      updated_at
+    FROM calendar_events_with_member
+    ${where}
+    ORDER BY date ASC, member_name ASC, created_at ASC
+  `;
+
+  const result = await client.query(query, values);
+  return result.rows.map(mapEvent);
+}
+
+// ─────────────────────────────────────────────
+// MEMBERS
+// ─────────────────────────────────────────────
 async function getMembers() {
   const result = await client.query(`
     SELECT
@@ -144,67 +249,9 @@ async function getMembers() {
   return result.rows.map(mapMember);
 }
 
-// ─── EVENTS ─────────────────────────────────
-async function getEvents(filters = {}) {
-  const { memberId, year, month, id } = filters;
-
-  const clauses = [];
-  const values = [];
-
-  let idx = 1;
-
-  if (id) {
-    clauses.push(`e.id = $${idx++}`);
-    values.push(id);
-  }
-
-  if (memberId) {
-    clauses.push(`e.member_id = $${idx++}`);
-    values.push(memberId);
-  }
-
-  if (year && month) {
-    const { start, end } = rangeForMonth(year, month);
-
-    clauses.push(`e.date BETWEEN $${idx++} AND $${idx++}`);
-
-    values.push(start, end);
-  } else if (year) {
-    clauses.push(`EXTRACT(YEAR FROM e.date) = $${idx++}`);
-    values.push(Number(year));
-  }
-
-  const where = clauses.length
-    ? `WHERE ${clauses.join(' AND ')}`
-    : '';
-
-  const query = `
-    SELECT
-      e.id,
-      e.member_id,
-      e.date::text AS date,
-      e.tipo,
-      e.departamento,
-      e.municipio,
-      e.detalle,
-      e.created_at,
-      e.updated_at,
-      m.name AS member_name,
-      m.color AS member_color,
-      m.initials AS member_initials
-    FROM calendar_events e
-    JOIN team_members m
-      ON m.id = e.member_id
-    ${where}
-    ORDER BY e.date ASC, m.sort_order ASC, e.created_at ASC
-  `;
-
-  const result = await client.query(query, values);
-
-  return result.rows.map(mapEvent);
-}
-
-// ─── CREATE EVENT ───────────────────────────
+// ─────────────────────────────────────────────
+// CREATE EVENT
+// ─────────────────────────────────────────────
 async function createEvent(payload) {
   const {
     id,
@@ -218,12 +265,22 @@ async function createEvent(payload) {
 
   if (!id) throw new Error('id es obligatorio');
   if (!memberId) throw new Error('memberId es obligatorio');
-  if (!isValidDate(date)) {
+  if (!date || !isValidDate(date)) {
     throw new Error('date debe tener formato YYYY-MM-DD');
   }
   if (!tipo) throw new Error('tipo es obligatorio');
 
-  const result = await client.query(
+  // valida que el miembro exista antes del INSERT
+  const memberCheck = await client.query(
+    `SELECT id FROM team_members WHERE id = $1`,
+    [memberId]
+  );
+
+  if (!memberCheck.rows[0]) {
+    throw new Error(`memberId no existe: ${memberId}`);
+  }
+
+  await client.query(
     `
     INSERT INTO calendar_events (
       id,
@@ -243,51 +300,29 @@ async function createEvent(payload) {
       $6,
       $7
     )
-    RETURNING
-      id,
-      member_id,
-      date::text AS date,
-      tipo,
-      departamento,
-      municipio,
-      detalle,
-      created_at,
-      updated_at
     `,
     [
       id,
       memberId,
       date,
       tipo,
-      departamento,
-      municipio,
-      detalle,
+      departamento || '',
+      municipio || '',
+      detalle || '',
     ]
   );
 
-  const row = result.rows[0];
+  const created = await getEventById(id);
+  if (!created) {
+    throw new Error('No se pudo leer el evento recién creado');
+  }
 
-  const member = await client.query(
-    `
-    SELECT
-      name AS member_name,
-      color AS member_color,
-      initials AS member_initials
-    FROM team_members
-    WHERE id = $1
-    `,
-    [memberId]
-  );
-
-  return mapEvent({
-    ...row,
-    member_name: member.rows[0]?.member_name,
-    member_color: member.rows[0]?.member_color,
-    member_initials: member.rows[0]?.member_initials,
-  });
+  return created;
 }
 
-// ─── UPDATE EVENT ───────────────────────────
+// ─────────────────────────────────────────────
+// UPDATE EVENT
+// ─────────────────────────────────────────────
 async function updateEvent(id, payload) {
   const current = await client.query(
     `SELECT * FROM calendar_events WHERE id = $1`,
@@ -298,26 +333,36 @@ async function updateEvent(id, payload) {
     throw new Error('Evento no encontrado');
   }
 
-  const {
-    memberId = current.rows[0].member_id,
-    date =
-      current.rows[0].date?.toISOString?.().slice(0, 10) ||
-      current.rows[0].date,
-    tipo = current.rows[0].tipo,
-    departamento = current.rows[0].departamento,
-    municipio = current.rows[0].municipio,
-    detalle = current.rows[0].detalle,
-  } = payload;
+  const old = current.rows[0];
+
+  const memberId = payload.memberId || old.member_id;
+  const date = payload.date || old.date.toISOString().slice(0, 10);
+  const tipo = payload.tipo || old.tipo;
+  const departamento =
+    payload.departamento !== undefined
+      ? payload.departamento
+      : old.departamento;
+  const municipio =
+    payload.municipio !== undefined ? payload.municipio : old.municipio;
+  const detalle =
+    payload.detalle !== undefined ? payload.detalle : old.detalle;
 
   if (!memberId) throw new Error('memberId es obligatorio');
-
   if (!isValidDate(date)) {
     throw new Error('date debe tener formato YYYY-MM-DD');
   }
-
   if (!tipo) throw new Error('tipo es obligatorio');
 
-  const result = await client.query(
+  const memberCheck = await client.query(
+    `SELECT id FROM team_members WHERE id = $1`,
+    [memberId]
+  );
+
+  if (!memberCheck.rows[0]) {
+    throw new Error(`memberId no existe: ${memberId}`);
+  }
+
+  await client.query(
     `
     UPDATE calendar_events
     SET
@@ -328,51 +373,29 @@ async function updateEvent(id, payload) {
       municipio = $6,
       detalle = $7
     WHERE id = $1
-    RETURNING
-      id,
-      member_id,
-      date::text AS date,
-      tipo,
-      departamento,
-      municipio,
-      detalle,
-      created_at,
-      updated_at
     `,
     [
       id,
       memberId,
       date,
       tipo,
-      departamento,
-      municipio,
-      detalle,
+      departamento || '',
+      municipio || '',
+      detalle || '',
     ]
   );
 
-  const row = result.rows[0];
+  const updated = await getEventById(id);
+  if (!updated) {
+    throw new Error('No se pudo leer el evento actualizado');
+  }
 
-  const member = await client.query(
-    `
-    SELECT
-      name AS member_name,
-      color AS member_color,
-      initials AS member_initials
-    FROM team_members
-    WHERE id = $1
-    `,
-    [memberId]
-  );
-
-  return mapEvent({
-    ...row,
-    member_name: member.rows[0]?.member_name,
-    member_color: member.rows[0]?.member_color,
-    member_initials: member.rows[0]?.member_initials,
-  });
+  return updated;
 }
 
-// ─── DELETE EVENT ───────────────────────────
+// ─────────────────────────────────────────────
+// DELETE EVENT
+// ─────────────────────────────────────────────
 async function deleteEvent(id) {
   const result = await client.query(
     `DELETE FROM calendar_events WHERE id = $1 RETURNING id`,
@@ -382,7 +405,9 @@ async function deleteEvent(id) {
   return result.rowCount > 0;
 }
 
-// ─── SERVER ─────────────────────────────────
+// ─────────────────────────────────────────────
+// SERVER
+// ─────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   setCorsHeaders(res);
 
@@ -392,36 +417,31 @@ const server = http.createServer(async (req, res) => {
   }
 
   const parsedUrl = url.parse(req.url, true);
-
   const path = parsedUrl.pathname || '/';
   const query = parsedUrl.query || {};
 
-  // ROOT
-  if (path === '/') {
-    return sendJSON(res, 200, {
-      servicio: 'Calendario Equipo Social DIH',
-      version: '2.0.0',
-    });
-  }
+  try {
+    // ROOT
+    if (path === '/') {
+      return sendJSON(res, 200, {
+        servicio: 'Calendario Equipo Social DIH',
+        version: '2.0.0',
+      });
+    }
 
-  // HEALTH
-  if (path === '/health') {
-    return sendJSON(res, 200, { ok: true });
-  }
+    // HEALTH
+    if (path === '/health') {
+      return sendJSON(res, 200, { ok: true });
+    }
 
-  // MEMBERS
-  if (path === '/members' && req.method === 'GET') {
-    try {
+    // MEMBERS
+    if (path === '/members' && req.method === 'GET') {
       const members = await getMembers();
       return sendJSON(res, 200, members);
-    } catch (err) {
-      return sendJSON(res, 500, { error: err.message });
     }
-  }
 
-  // EVENTS
-  if (path === '/events' && req.method === 'GET') {
-    try {
+    // GET EVENTS
+    if (path === '/events' && req.method === 'GET') {
       const { memberId, year, month, id } = query;
 
       if (month && !isValidMonth(month)) {
@@ -444,156 +464,101 @@ const server = http.createServer(async (req, res) => {
       });
 
       return sendJSON(res, 200, events);
-    } catch (err) {
-      return sendJSON(res, 500, {
-        error: err.message,
-      });
-    }
-  }
-
-  // EVENT DETAIL
-  if (path.startsWith('/events/') && req.method === 'GET') {
-    const id = path.split('/').filter(Boolean)[1];
-
-    if (!id) {
-      return sendJSON(res, 400, {
-        error: 'ID inválido',
-      });
     }
 
-    try {
-      const events = await getEvents({ id });
+    // GET EVENT DETAIL
+    if (path.startsWith('/events/') && req.method === 'GET') {
+      const id = path.split('/').filter(Boolean)[1];
 
-      if (!events[0]) {
-        return sendJSON(res, 404, {
-          error: 'Evento no encontrado',
-        });
+      if (!id) {
+        return sendJSON(res, 400, { error: 'ID inválido' });
       }
 
-      return sendJSON(res, 200, events[0]);
-    } catch (err) {
-      return sendJSON(res, 500, {
-        error: err.message,
-      });
+      const event = await getEventById(id);
+
+      if (!event) {
+        return sendJSON(res, 404, { error: 'Evento no encontrado' });
+      }
+
+      return sendJSON(res, 200, event);
     }
-  }
 
-  // CREATE EVENT
-  if (path === '/events' && req.method === 'POST') {
-    try {
+    // CREATE EVENT
+    if (path === '/events' && req.method === 'POST') {
       const body = await readBody(req);
-
       const created = await createEvent(body);
-
       return sendJSON(res, 201, created);
-    } catch (err) {
-      const status =
-        /obligatorio|formato/i.test(err.message)
-          ? 400
-          : 500;
-
-      return sendJSON(res, status, {
-        error: err.message,
-      });
-    }
-  }
-
-  // UPDATE EVENT
-  if (
-    path.startsWith('/events/') &&
-    (req.method === 'PUT' || req.method === 'PATCH')
-  ) {
-    const id = path.split('/').filter(Boolean)[1];
-
-    if (!id) {
-      return sendJSON(res, 400, {
-        error: 'ID inválido',
-      });
     }
 
-    try {
+    // UPDATE EVENT
+    if (
+      path.startsWith('/events/') &&
+      (req.method === 'PUT' || req.method === 'PATCH')
+    ) {
+      const id = path.split('/').filter(Boolean)[1];
+
+      if (!id) {
+        return sendJSON(res, 400, { error: 'ID inválido' });
+      }
+
       const body = await readBody(req);
-
       const updated = await updateEvent(id, body);
-
       return sendJSON(res, 200, updated);
-    } catch (err) {
-      const status =
-        /no encontrado|obligatorio|formato/i.test(
-          err.message
-        )
-          ? 400
-          : 500;
-
-      return sendJSON(res, status, {
-        error: err.message,
-      });
-    }
-  }
-
-  // DELETE EVENT
-  if (
-    path.startsWith('/events/') &&
-    req.method === 'DELETE'
-  ) {
-    const id = path.split('/').filter(Boolean)[1];
-
-    if (!id) {
-      return sendJSON(res, 400, {
-        error: 'ID inválido',
-      });
     }
 
-    try {
+    // DELETE EVENT
+    if (path.startsWith('/events/') && req.method === 'DELETE') {
+      const id = path.split('/').filter(Boolean)[1];
+
+      if (!id) {
+        return sendJSON(res, 400, { error: 'ID inválido' });
+      }
+
       const deleted = await deleteEvent(id);
 
       if (!deleted) {
-        return sendJSON(res, 404, {
-          error: 'Evento no encontrado',
-        });
+        return sendJSON(res, 404, { error: 'Evento no encontrado' });
       }
 
-      return sendJSON(res, 200, {
-        ok: true,
-      });
-    } catch (err) {
-      return sendJSON(res, 500, {
-        error: err.message,
-      });
+      return sendJSON(res, 200, { ok: true });
     }
+
+    // DOCS
+    if (path === '/docs' && req.method === 'GET') {
+      return sendText(
+        res,
+        200,
+        `
+          <h1>Calendario DIH API</h1>
+          <ul>
+            <li>GET /members</li>
+            <li>GET /events</li>
+            <li>GET /events/:id</li>
+            <li>POST /events</li>
+            <li>PUT /events/:id</li>
+            <li>DELETE /events/:id</li>
+          </ul>
+        `
+      );
+    }
+
+    return sendJSON(res, 404, { error: 'Ruta no existe' });
+  } catch (err) {
+    console.error('❌ ERROR EN SERVIDOR:', err);
+
+    return sendJSON(res, 500, {
+      error: err.message || 'Error interno del servidor',
+    });
   }
-
-  // DOCS
-  if (path === '/docs' && req.method === 'GET') {
-    return sendText(
-      res,
-      200,
-      `
-      <h1>Calendario DIH API</h1>
-
-      <ul>
-        <li>GET /members</li>
-        <li>GET /events</li>
-        <li>POST /events</li>
-        <li>PUT /events/:id</li>
-        <li>DELETE /events/:id</li>
-      </ul>
-      `
-    );
-  }
-
-  return sendJSON(res, 404, {
-    error: 'Ruta no existe',
-  });
 });
 
-// ─── START ──────────────────────────────────
+// ─────────────────────────────────────────────
+// START
+// ─────────────────────────────────────────────
 initDb()
   .then(() => {
     server.listen(PORT, () => {
-      console.log(
-        `🚀 Servidor corriendo en puerto ${PORT}`
-      );
+      console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
     });
   })
   .catch((err) => {

@@ -1,28 +1,6 @@
 // services/calendarService.ts
+import { CalendarEvent, TeamMember } from '../types';
 
-export type TeamMember = {
-  id: string;
-  name: string;
-  color: string;
-  initials: string;
-  sortOrder?: number;
-  active?: boolean;
-};
-
-export type CalendarEvent = {
-  id: string;
-  memberId: string;
-  memberName?: string;
-  memberColor?: string;
-  memberInitials?: string;
-  date: string;
-  tipo: string;
-  departamento: string;
-  municipio: string;
-  detalle: string;
-  createdAt?: string;
-  updatedAt?: string;
-};
 
 // 🔥 TU MICROSERVICIO DE RENDER
 const BASE_URL = 'https://horarioorganizado.onrender.com';

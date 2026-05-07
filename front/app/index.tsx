@@ -8,7 +8,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 import { TEAM_MEMBERS } from '../data/teamMembers';
 import CombinedScreen from '../screens/CombinedScreen';
@@ -36,11 +36,10 @@ export default function App() {
   const tabScrollRef = useRef<ScrollView>(null);
 
   const activeMember = TEAM_MEMBERS.find((m) => m.id === activeTab) || null;
-  const activeTabObj = TABS.find((t) => t.id === activeTab);
 
   const handleTabPress = (tabId: string, index: number) => {
     setActiveTab(tabId);
-    // Scroll tab bar to keep selected tab visible
+
     tabScrollRef.current?.scrollTo({
       x: Math.max(0, index * 90 - SCREEN_WIDTH / 2 + 45),
       animated: true,
@@ -51,7 +50,6 @@ export default function App() {
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#1E3A8A" />
 
-      {/* ── App Header ── */}
       <View style={styles.appHeader}>
         <View style={styles.headerLeft}>
           <View style={styles.headerIcon}>
@@ -62,14 +60,21 @@ export default function App() {
             <Text style={styles.appSubtitle}>Social · 2026</Text>
           </View>
         </View>
+
         {activeMember && (
-          <View style={[styles.activeMemberBadge, { backgroundColor: activeMember.color }]}>
-            <Text style={styles.activeMemberInitials}>{activeMember.initials}</Text>
+          <View
+            style={[
+              styles.activeMemberBadge,
+              { backgroundColor: activeMember.color },
+            ]}
+          >
+            <Text style={styles.activeMemberInitials}>
+              {activeMember.initials}
+            </Text>
           </View>
         )}
       </View>
 
-      {/* ── Tab bar ── */}
       <View style={styles.tabBarContainer}>
         <ScrollView
           ref={tabScrollRef}
@@ -113,6 +118,7 @@ export default function App() {
                     </Text>
                   </View>
                 )}
+
                 <Text
                   style={[
                     styles.tabLabel,
@@ -128,7 +134,6 @@ export default function App() {
         </ScrollView>
       </View>
 
-      {/* ── Screen content ── */}
       <View style={styles.screenContainer}>
         {activeTab === 'combined' ? (
           <CombinedScreen />

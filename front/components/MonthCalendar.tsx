@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import {
+  FlatList,
+  Modal,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { getEventType } from '../data/eventTypes';
 import { CalendarEvent, TeamMember } from '../types';
 import DayCell from './DayCell';
 import TaskModal from './TaskModal';
-
 
 interface MonthCalendarProps {
   year: number;
@@ -20,11 +22,36 @@ interface MonthCalendarProps {
 }
 
 const MONTHS_ES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+  'Enero',
+  'Febrero',
+  'Marzo',
+  'Abril',
+  'Mayo',
+  'Junio',
+  'Julio',
+  'Agosto',
+  'Septiembre',
+  'Octubre',
+  'Noviembre',
+  'Diciembre',
 ];
 
 const DAYS_ES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+const MONTHS_ES_SHORT = [
+  'ene',
+  'feb',
+  'mar',
+  'abr',
+  'may',
+  'jun',
+  'jul',
+  'ago',
+  'sep',
+  'oct',
+  'nov',
+  'dic',
+];
 
 const getDaysInMonth = (year: number, month: number) =>
   new Date(year, month, 0).getDate();
@@ -39,7 +66,11 @@ const formatDate = (year: number, month: number, day: number): string =>
   `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
 const today = new Date();
-const todayStr = formatDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
+const todayStr = formatDate(
+  today.getFullYear(),
+  today.getMonth() + 1,
+  today.getDate(),
+);
 
 const MonthCalendar: React.FC<MonthCalendarProps> = ({
   year,
@@ -58,7 +89,6 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
   const daysInMonth = getDaysInMonth(year, month);
   const firstDayOffset = getFirstDayOfMonth(year, month);
 
-  // Build grid: 6 rows × 7 cols
   const cells: Array<{ day: number | null; date: string | null }> = [];
   for (let i = 0; i < firstDayOffset; i++) cells.push({ day: null, date: null });
   for (let d = 1; d <= daysInMonth; d++) {
@@ -66,25 +96,22 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
   }
   while (cells.length % 7 !== 0) cells.push({ day: null, date: null });
 
-  const getEventsForDate = (date: string) =>
-    events.filter((e) => e.date === date);
+  const getEventsForDate = (date: string) => events.filter((e) => e.date === date);
 
   const handleDayPress = (date: string) => {
     if (readOnly) return;
+
     const evts = getEventsForDate(date);
     setSelectedDate(date);
     setDayEvents(evts);
 
     if (evts.length === 0) {
-      // Create new event
       setSelectedEvent(null);
       setModalVisible(true);
     } else if (evts.length === 1) {
-      // View/edit single event
       setSelectedEvent(evts[0]);
       setModalVisible(true);
     } else {
-      // Multiple events — show picker
       setMultiEventVisible(true);
     }
   };
@@ -96,12 +123,12 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* Month header */}
       <View style={[styles.monthHeader, member && { borderLeftColor: member.color }]}>
         <View>
           <Text style={styles.monthName}>{MONTHS_ES[month - 1]}</Text>
           <Text style={styles.monthYear}>{year}</Text>
         </View>
+
         {monthEventCount > 0 && (
           <View style={[styles.countBadge, member && { backgroundColor: member.color }]}>
             <Text style={styles.countText}>{monthEventCount}</Text>
@@ -109,7 +136,6 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
         )}
       </View>
 
-      {/* Weekday headers */}
       <View style={styles.weekRow}>
         {DAYS_ES.map((d) => (
           <Text key={d} style={styles.weekDay}>
@@ -118,7 +144,6 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
         ))}
       </View>
 
-      {/* Day grid */}
       {Array.from({ length: cells.length / 7 }).map((_, rowIdx) => (
         <View key={rowIdx} style={styles.row}>
           {cells.slice(rowIdx * 7, rowIdx * 7 + 7).map((cell, colIdx) => (
@@ -135,7 +160,6 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
         </View>
       ))}
 
-      {/* Multi-event picker modal */}
       {multiEventVisible && selectedDate && (
         <MultiEventPicker
           visible={multiEventVisible}
@@ -156,7 +180,6 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
         />
       )}
 
-      {/* Task modal */}
       <TaskModal
         visible={modalVisible}
         date={selectedDate}
@@ -176,13 +199,6 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
   );
 };
 
-// ─── Multi-event picker ─────────────────────────────────────
-import {
-  FlatList,
-  Modal
-} from 'react-native';
-import { getEventType } from '../data/eventTypes';
-
 interface MultiEventPickerProps {
   visible: boolean;
   events: CalendarEvent[];
@@ -193,13 +209,14 @@ interface MultiEventPickerProps {
   onClose: () => void;
 }
 
-const MONTHS_ES_SHORT = [
-  'ene', 'feb', 'mar', 'abr', 'may', 'jun',
-  'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
-];
-
 const MultiEventPicker: React.FC<MultiEventPickerProps> = ({
-  visible, events, date, member, onSelectEvent, onAddNew, onClose,
+  visible,
+  events,
+  date,
+  member,
+  onSelectEvent,
+  onAddNew,
+  onClose,
 }) => {
   const [, monthStr, dayStr] = date.split('-');
   const label = `${parseInt(dayStr)} ${MONTHS_ES_SHORT[parseInt(monthStr) - 1]}`;
@@ -207,7 +224,7 @@ const MultiEventPicker: React.FC<MultiEventPickerProps> = ({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={mpStyles.overlay} activeOpacity={1} onPress={onClose}>
-        <View style={mpStyles.sheet}>
+        <TouchableOpacity activeOpacity={1} style={mpStyles.sheet}>
           <View style={mpStyles.header}>
             <Text style={mpStyles.title}>Actividades · {label}</Text>
             <TouchableOpacity onPress={onClose}>
@@ -218,19 +235,26 @@ const MultiEventPicker: React.FC<MultiEventPickerProps> = ({
           <FlatList
             data={events}
             keyExtractor={(item) => item.id}
+            showsVerticalScrollIndicator={false}
             renderItem={({ item }) => {
               const et = getEventType(item.tipo);
+
               return (
                 <TouchableOpacity
                   style={[mpStyles.item, { borderLeftColor: et.color }]}
                   onPress={() => onSelectEvent(item)}
+                  activeOpacity={0.75}
                 >
                   <View style={[mpStyles.itemBadge, { backgroundColor: et.bgColor }]}>
                     <Text style={[mpStyles.itemType, { color: et.color }]}>{et.label}</Text>
                   </View>
-                  <Text style={mpStyles.itemDept}>{item.departamento} — {item.municipio}</Text>
+                  <Text style={mpStyles.itemDept}>
+                    {item.departamento} — {item.municipio}
+                  </Text>
                   {item.detalle ? (
-                    <Text style={mpStyles.itemDetalle} numberOfLines={1}>{item.detalle}</Text>
+                    <Text style={mpStyles.itemDetalle} numberOfLines={1}>
+                      {item.detalle}
+                    </Text>
                   ) : null}
                 </TouchableOpacity>
               );
@@ -240,10 +264,11 @@ const MultiEventPicker: React.FC<MultiEventPickerProps> = ({
           <TouchableOpacity
             style={[mpStyles.addBtn, member && { backgroundColor: member.color }]}
             onPress={onAddNew}
+            activeOpacity={0.85}
           >
             <Text style={mpStyles.addBtnText}>+ Agregar nueva actividad</Text>
           </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
       </TouchableOpacity>
     </Modal>
   );
@@ -252,13 +277,13 @@ const MultiEventPicker: React.FC<MultiEventPickerProps> = ({
 const mpStyles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     padding: 24,
   },
   sheet: {
     backgroundColor: '#FFF',
-    borderRadius: 20,
+    borderRadius: 22,
     overflow: 'hidden',
     maxHeight: '80%',
   },
@@ -272,7 +297,7 @@ const mpStyles = StyleSheet.create({
   },
   title: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#111827',
   },
   close: {
@@ -282,10 +307,9 @@ const mpStyles = StyleSheet.create({
   },
   item: {
     padding: 16,
-    borderLeftWidth: 3,
+    borderLeftWidth: 4,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
-    marginHorizontal: 0,
   },
   itemBadge: {
     alignSelf: 'flex-start',
@@ -296,28 +320,28 @@ const mpStyles = StyleSheet.create({
   },
   itemType: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   itemDept: {
     fontSize: 14,
     color: '#374151',
-    fontWeight: '500',
+    fontWeight: '600',
   },
   itemDetalle: {
     fontSize: 13,
     color: '#6B7280',
-    marginTop: 3,
+    marginTop: 4,
   },
   addBtn: {
     margin: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
     backgroundColor: '#2563EB',
   },
   addBtnText: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#FFF',
   },
 });
@@ -325,7 +349,7 @@ const mpStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: 'hidden',
     marginBottom: 20,
     shadowColor: '#000',

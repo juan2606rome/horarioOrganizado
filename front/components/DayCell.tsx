@@ -1,7 +1,7 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { CalendarEvent } from '../types';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { getEventType } from '../data/eventTypes';
+import { CalendarEvent } from '../types';
 
 interface DayCellProps {
   day: number | null;
@@ -18,62 +18,50 @@ const DayCell: React.FC<DayCellProps> = ({
   events,
   isToday,
   onPress,
-  memberColor,
 }) => {
   if (!day || !date) {
     return <View style={styles.empty} />;
   }
 
   const hasEvents = events.length > 0;
-  const firstEvent = events[0];
-  const eventType = firstEvent ? getEventType(firstEvent.tipo) : null;
 
   return (
     <TouchableOpacity
       style={[
         styles.cell,
         isToday && styles.today,
-        hasEvents && eventType && { backgroundColor: eventType.bgColor, borderColor: eventType.color },
+        hasEvents && styles.hasEvents,
       ]}
       onPress={() => onPress(date)}
-      activeOpacity={0.7}
+      activeOpacity={0.75}
     >
-      <Text
-        style={[
-          styles.dayNumber,
-          isToday && styles.todayText,
-          hasEvents && eventType && { color: eventType.textColor },
-        ]}
-      >
+      <Text style={[styles.dayNumber, isToday && styles.todayText]}>
         {day}
       </Text>
 
-      {/* Event indicators */}
       {hasEvents && (
-        <View style={styles.dotsRow}>
-          {events.slice(0, 3).map((ev, idx) => {
+        <View style={styles.eventsWrap}>
+          {events.slice(0, 2).map((ev) => {
             const et = getEventType(ev.tipo);
             return (
               <View
                 key={ev.id}
-                style={[styles.dot, { backgroundColor: et.color }]}
-              />
+                style={[styles.eventChip, { borderLeftColor: et.color }]}
+              >
+                <View style={[styles.dot, { backgroundColor: et.color }]} />
+                <Text style={styles.eventChipText} numberOfLines={1}>
+                  {et.label}
+                </Text>
+              </View>
             );
           })}
-          {events.length > 3 && (
-            <Text style={styles.moreText}>+{events.length - 3}</Text>
+
+          {events.length > 2 && (
+            <View style={styles.moreChip}>
+              <Text style={styles.moreText}>+{events.length - 2} más</Text>
+            </View>
           )}
         </View>
-      )}
-
-      {/* Event type label (first event only) */}
-      {hasEvents && eventType && (
-        <Text
-          style={[styles.eventLabel, { color: eventType.color }]}
-          numberOfLines={1}
-        >
-          {getEventType(firstEvent.tipo).label.split(' ')[0]}
-        </Text>
       )}
     </TouchableOpacity>
   );
@@ -83,58 +71,72 @@ const styles = StyleSheet.create({
   empty: {
     flex: 1,
     margin: 2,
-    minHeight: 60,
+    minHeight: 92,
   },
   cell: {
     flex: 1,
     margin: 2,
-    minHeight: 60,
+    minHeight: 92,
     backgroundColor: '#F9FAFB',
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    padding: 5,
-    alignItems: 'center',
+    padding: 6,
   },
   today: {
     borderWidth: 2,
     borderColor: '#2563EB',
     backgroundColor: '#EFF6FF',
   },
+  hasEvents: {
+    backgroundColor: '#FFFFFF',
+  },
   dayNumber: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#374151',
     alignSelf: 'flex-start',
   },
   todayText: {
     color: '#2563EB',
-    fontWeight: '800',
+    fontWeight: '900',
   },
-  dotsRow: {
+  eventsWrap: {
+    marginTop: 6,
+    gap: 4,
+  },
+  eventChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
-    marginTop: 4,
-    flexWrap: 'wrap',
-    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#F8FAFF',
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
   },
   dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 999,
+  },
+  eventChipText: {
+    flex: 1,
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  moreChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EEF2FF',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   moreText: {
-    fontSize: 8,
-    color: '#6B7280',
-    fontWeight: '600',
-  },
-  eventLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    marginTop: 3,
-    textAlign: 'center',
-    letterSpacing: 0.2,
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#3730A3',
   },
 });
 

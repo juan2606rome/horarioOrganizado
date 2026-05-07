@@ -13,8 +13,8 @@ export interface CalendarEvent {
   departamento: string;
   municipio: string;
   detalle: string;
-  createdAt: string;
-  updatedAt: string;
+createdAt?: string;
+updatedAt?: string;
 }
 
 export interface EventType {

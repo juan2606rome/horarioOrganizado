@@ -1,16 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
+  ActivityIndicator,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  ActivityIndicator,
-  RefreshControl,
+  View,
 } from 'react-native';
-import { TeamMember, CalendarEvent } from '../types';
-import { CalendarService } from '../services/calendarService';
 import MonthCalendar from '../components/MonthCalendar';
 import { EVENT_TYPES } from '../data/eventTypes';
+import { CalendarService } from '../services/calendarService';
+import { CalendarEvent, TeamMember } from '../types';
 
 interface MemberCalendarScreenProps {
   member: TeamMember;
@@ -24,17 +24,20 @@ const MemberCalendarScreen: React.FC<MemberCalendarScreenProps> = ({ member }) =
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadEvents = useCallback(async () => {
-    try {
-      const data = await CalendarService.getEventsByMember(member.id);
-      setEvents(data);
-    } catch (err) {
-      console.error('Error loading events:', err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [member.id]);
+const loadEvents = useCallback(async () => {
+  try {
+    const data = await CalendarService.getEvents({
+      memberId: member.id,
+    });
+
+    setEvents(data);
+  } catch (err) {
+    console.error('Error loading events:', err);
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+}, [member.id]);
 
   useEffect(() => {
     setLoading(true);
