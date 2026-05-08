@@ -57,6 +57,7 @@ const CombinedScreen: React.FC<CombinedScreenProps> = ({ members }) => {
   const [dayModalVisible, setDayModalVisible] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedDayEvents, setSelectedDayEvents] = useState<CalendarEvent[]>([]);
+  const [visibleMemberIds, setVisibleMemberIds] = useState<string[]>([]);
 
   const loadEvents = useCallback(async () => {
     try {
@@ -74,6 +75,10 @@ const CombinedScreen: React.FC<CombinedScreenProps> = ({ members }) => {
     loadEvents();
   }, [loadEvents]);
 
+  useEffect(() => {
+    setVisibleMemberIds(members.map((m) => m.id));
+  }, [members]);
+
   const onRefresh = () => {
     setRefreshing(true);
     loadEvents();
@@ -83,6 +88,19 @@ const CombinedScreen: React.FC<CombinedScreenProps> = ({ members }) => {
     (id: string): TeamMember | undefined => members.find((m) => m.id === id),
     [members],
   );
+
+  const isMemberVisible = useCallback(
+    (memberId: string) => visibleMemberIds.includes(memberId),
+    [visibleMemberIds],
+  );
+
+  const toggleMemberVisibility = (memberId: string) => {
+    setVisibleMemberIds((current) =>
+      current.includes(memberId)
+        ? current.filter((id) => id !== memberId)
+        : [...current, memberId]
+    );
+  };
 
   const sortEventsForDisplay = useCallback(
     (list: CalendarEvent[]) => {
@@ -109,8 +127,13 @@ const CombinedScreen: React.FC<CombinedScreenProps> = ({ members }) => {
   );
 
   const getEventsForDate = useCallback(
-    (date: string) => sortEventsForDisplay(events.filter((e) => e.date === date)),
-    [events, sortEventsForDisplay],
+    (date: string) =>
+      sortEventsForDisplay(
+        events.filter(
+          (e) => e.date === date && isMemberVisible(e.memberId)
+        )
+      ),
+    [events, sortEventsForDisplay, isMemberVisible],
   );
 
   const openDayModal = (date: string) => {
@@ -121,7 +144,9 @@ const CombinedScreen: React.FC<CombinedScreenProps> = ({ members }) => {
     setDayModalVisible(true);
   };
 
-  const months = selectedMonth !== null ? [selectedMonth] : Array.from({ length: 12 }, (_, i) => i + 1);
+  const months = selectedMonth !== null
+    ? [selectedMonth]
+    : Array.from({ length: 12 }, (_, i) => i + 1);
 
   const getPriorityLabel = (memberName?: string) => {
     if (!memberName) return '';
@@ -179,30 +204,44 @@ const CombinedScreen: React.FC<CombinedScreenProps> = ({ members }) => {
 
         <View style={styles.memberLegend}>
           <Text style={styles.legendTitle}>Integrantes:</Text>
+          <Text style={styles.legendHint}>Toca un nombre para mostrar u ocultar sus actividades</Text>
+
           <View style={styles.legendRow}>
             {members.length === 0 ? (
               <Text style={styles.noMembersText}>No hay integrantes cargados</Text>
             ) : (
               members.map((m) => {
                 const priority = isPriorityMemberName(m.name);
+                const active = isMemberVisible(m.id);
+
                 return (
-                  <View
+                  <TouchableOpacity
                     key={m.id}
                     style={[
                       styles.memberChip,
+                      active ? styles.memberChipActive : styles.memberChipInactive,
                       priority && styles.memberChipPriority,
                     ]}
+                    onPress={() => toggleMemberVisibility(m.id)}
+                    activeOpacity={0.8}
                   >
                     <View style={[styles.memberDot, { backgroundColor: m.color }]} />
-                    <Text style={styles.memberChipText} numberOfLines={1}>
+                    <Text
+                      style={[
+                        styles.memberChipText,
+                        !active && styles.memberChipTextInactive,
+                      ]}
+                      numberOfLines={1}
+                    >
                       {m.name}
                     </Text>
+
                     {priority ? (
                       <View style={styles.priorityMiniBadge}>
                         <Text style={styles.priorityMiniText}>DIR</Text>
                       </View>
                     ) : null}
-                  </View>
+                  </TouchableOpacity>
                 );
               })
             )}
@@ -212,9 +251,10 @@ const CombinedScreen: React.FC<CombinedScreenProps> = ({ members }) => {
         {months.map((month) => {
           const daysInMonth = getDaysInMonth(YEAR, month);
           const firstDayOffset = getFirstDayOfMonth(YEAR, month);
+
           const monthEvents = events.filter((e) => {
             const [, m] = e.date.split('-').map(Number);
-            return m === month;
+            return m === month && isMemberVisible(e.memberId);
           });
 
           const cells: Array<{ day: number | null; date: string | null }> = [];
@@ -294,7 +334,9 @@ const CombinedScreen: React.FC<CombinedScreenProps> = ({ members }) => {
 
                           {dayEvts.length > 3 && (
                             <View style={styles.moreChip}>
-                              <Text style={styles.moreChipText}>+{dayEvts.length - 3} más</Text>
+                              <Text style={styles.moreChipText}>
+                                +{dayEvts.length - 3} más
+                              </Text>
                             </View>
                           )}
                         </View>
@@ -397,10 +439,23 @@ const CombinedScreen: React.FC<CombinedScreenProps> = ({ members }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F1F5F9' },
-  content: { padding: 12 },
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontSize: 14, color: '#6B7280' },
+  container: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+  },
+  content: {
+    padding: 12,
+  },
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
 
   filterSection: {
     backgroundColor: '#FFF',
@@ -421,7 +476,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     textTransform: 'uppercase',
   },
-  monthScroll: { flexDirection: 'row' },
+  monthScroll: {
+    flexDirection: 'row',
+  },
   monthChip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
@@ -429,9 +486,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     marginRight: 6,
   },
-  monthChipActive: { backgroundColor: '#2563EB' },
-  monthChipText: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
-  monthChipTextActive: { color: '#FFF' },
+  monthChipActive: {
+    backgroundColor: '#2563EB',
+  },
+  monthChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  monthChipTextActive: {
+    color: '#FFF',
+  },
 
   memberLegend: {
     backgroundColor: '#FFF',
@@ -449,11 +514,25 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#9CA3AF',
     letterSpacing: 0.5,
-    marginBottom: 10,
+    marginBottom: 4,
     textTransform: 'uppercase',
   },
-  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  noMembersText: { fontSize: 13, color: '#9CA3AF', fontStyle: 'italic' },
+  legendHint: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 10,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  noMembersText: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+  },
+
   memberChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -466,12 +545,29 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     maxWidth: '100%',
   },
+  memberChipActive: {
+    opacity: 1,
+  },
+  memberChipInactive: {
+    opacity: 0.35,
+  },
   memberChipPriority: {
     borderColor: '#FB923C',
     backgroundColor: '#FFF7ED',
   },
-  memberDot: { width: 8, height: 8, borderRadius: 4 },
-  memberChipText: { fontSize: 12, fontWeight: '600', color: '#374151' },
+  memberDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  memberChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  memberChipTextInactive: {
+    color: '#9CA3AF',
+  },
   priorityMiniBadge: {
     backgroundColor: '#FED7AA',
     borderRadius: 999,
@@ -479,7 +575,11 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     marginLeft: 2,
   },
-  priorityMiniText: { fontSize: 9, fontWeight: '900', color: '#9A3412' },
+  priorityMiniText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#9A3412',
+  },
 
   monthBlock: {
     backgroundColor: '#FFF',
@@ -500,23 +600,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
-  monthName: { fontSize: 17, fontWeight: '800', color: '#FFF', letterSpacing: -0.3 },
+  monthName: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#FFF',
+    letterSpacing: -0.3,
+  },
   monthBadge: {
     backgroundColor: 'rgba(255,255,255,0.2)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
-  monthBadgeText: { fontSize: 12, fontWeight: '600', color: '#FFF' },
+  monthBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFF',
+  },
   weekRow: {
     flexDirection: 'row',
     backgroundColor: '#EFF6FF',
     paddingVertical: 8,
     paddingHorizontal: 4,
   },
-  weekDay: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '800', color: '#1E40AF' },
-  gridRow: { flexDirection: 'row', paddingHorizontal: 4, paddingVertical: 2 },
-  emptyCell: { flex: 1, margin: 2, minHeight: 92 },
+  weekDay: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1E40AF',
+  },
+  gridRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  emptyCell: {
+    flex: 1,
+    margin: 2,
+    minHeight: 92,
+  },
   dayCell: {
     flex: 1,
     margin: 2,
@@ -527,11 +650,28 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     padding: 6,
   },
-  todayCell: { borderWidth: 2, borderColor: '#2563EB', backgroundColor: '#EFF6FF' },
-  hasEventsCell: { backgroundColor: '#FFFFFF' },
-  cellDay: { fontSize: 12, fontWeight: '700', color: '#374151', alignSelf: 'flex-start' },
-  todayDayText: { color: '#2563EB', fontWeight: '900' },
-  eventStack: { marginTop: 6, gap: 4 },
+  todayCell: {
+    borderWidth: 2,
+    borderColor: '#2563EB',
+    backgroundColor: '#EFF6FF',
+  },
+  hasEventsCell: {
+    backgroundColor: '#FFFFFF',
+  },
+  cellDay: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#374151',
+    alignSelf: 'flex-start',
+  },
+  todayDayText: {
+    color: '#2563EB',
+    fontWeight: '900',
+  },
+  eventStack: {
+    marginTop: 6,
+    gap: 4,
+  },
   eventChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -542,9 +682,20 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 6,
   },
-  priorityEventChip: { backgroundColor: '#FFF7ED' },
-  eventChipDot: { width: 7, height: 7, borderRadius: 999 },
-  eventChipText: { flex: 1, fontSize: 9, fontWeight: '700', color: '#334155' },
+  priorityEventChip: {
+    backgroundColor: '#FFF7ED',
+  },
+  eventChipDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 999,
+  },
+  eventChipText: {
+    flex: 1,
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#334155',
+  },
   moreChip: {
     alignSelf: 'flex-start',
     backgroundColor: '#EEF2FF',
@@ -552,7 +703,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  moreChipText: { fontSize: 10, fontWeight: '800', color: '#3730A3' },
+  moreChipText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#3730A3',
+  },
 
   modalOverlay: {
     flex: 1,
@@ -579,7 +734,11 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 10,
   },
-  modalClose: { fontSize: 18, color: '#6B7280', fontWeight: '700' },
+  modalClose: {
+    fontSize: 18,
+    color: '#6B7280',
+    fontWeight: '700',
+  },
   modalItem: {
     borderWidth: 1,
     borderColor: '#E5E7EB',
@@ -605,8 +764,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  memberBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
-  modalMemberName: { fontSize: 14, fontWeight: '800', color: '#111827' },
+  memberBadgeText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  modalMemberName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
+  },
   priorityBadge: {
     alignSelf: 'flex-start',
     marginTop: 4,
@@ -615,7 +782,12 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 999,
   },
-  priorityBadgeText: { fontSize: 10, fontWeight: '900', color: '#9A3412', letterSpacing: 0.3 },
+  priorityBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#9A3412',
+    letterSpacing: 0.3,
+  },
   modalTypeBadge: {
     alignSelf: 'flex-start',
     borderRadius: 999,
@@ -623,9 +795,21 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginBottom: 6,
   },
-  modalTypeText: { fontSize: 11, fontWeight: '800' },
-  modalLocation: { fontSize: 12, fontWeight: '600', color: '#475569' },
-  modalDetalle: { marginTop: 4, fontSize: 12, color: '#64748B', lineHeight: 18 },
+  modalTypeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  modalLocation: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  modalDetalle: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 18,
+  },
 });
 
 export default CombinedScreen;
