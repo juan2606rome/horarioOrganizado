@@ -96,30 +96,51 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
   }
   while (cells.length % 7 !== 0) cells.push({ day: null, date: null });
 
-  const getEventsForDate = (date: string) => events.filter((e) => e.date === date);
+  const getEventsForDate = (date: string) =>
+    events.filter((e) => e.date === date);
+
+  const openCreateModal = (date: string) => {
+    if (readOnly) return;
+    setSelectedDate(date);
+    setSelectedEvent(null);
+    setModalVisible(true);
+  };
+
+  const openEditModal = (date: string, ev: CalendarEvent) => {
+    if (readOnly) return;
+    setSelectedDate(date);
+    setSelectedEvent(ev);
+    setModalVisible(true);
+  };
 
   const handleDayPress = (date: string) => {
     if (readOnly) return;
 
     const evts = getEventsForDate(date);
+
     setSelectedDate(date);
     setDayEvents(evts);
 
+    // Si no hay eventos, abre crear.
+    // Si hay 1 o más, abre el picker para editar una o agregar otra.
     if (evts.length === 0) {
       setSelectedEvent(null);
       setModalVisible(true);
-    } else if (evts.length === 1) {
-      setSelectedEvent(evts[0]);
-      setModalVisible(true);
-    } else {
-      setMultiEventVisible(true);
+      return;
     }
+
+    setMultiEventVisible(true);
   };
 
   const monthEventCount = events.filter((e) => {
     const [, m] = e.date.split('-').map(Number);
     return m === month;
   }).length;
+
+  const monthEventsVisible = events.filter((e) => {
+    const [, m] = e.date.split('-').map(Number);
+    return m === month;
+  });
 
   return (
     <View style={styles.container}>
@@ -185,13 +206,18 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
         date={selectedDate}
         member={member}
         existingEvent={selectedEvent}
-        onClose={() => setModalVisible(false)}
+        onClose={() => {
+          setModalVisible(false);
+          setSelectedEvent(null);
+        }}
         onSaved={() => {
           setModalVisible(false);
+          setSelectedEvent(null);
           onEventsChanged();
         }}
         onDeleted={() => {
           setModalVisible(false);
+          setSelectedEvent(null);
           onEventsChanged();
         }}
       />
@@ -219,7 +245,7 @@ const MultiEventPicker: React.FC<MultiEventPickerProps> = ({
   onClose,
 }) => {
   const [, monthStr, dayStr] = date.split('-');
-  const label = `${parseInt(dayStr)} ${MONTHS_ES_SHORT[parseInt(monthStr) - 1]}`;
+  const label = `${parseInt(dayStr, 10)} ${MONTHS_ES_SHORT[parseInt(monthStr, 10) - 1]}`;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -236,6 +262,11 @@ const MultiEventPicker: React.FC<MultiEventPickerProps> = ({
             data={events}
             keyExtractor={(item) => item.id}
             showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={mpStyles.emptyWrap}>
+                <Text style={mpStyles.emptyText}>No hay actividades para este día.</Text>
+              </View>
+            }
             renderItem={({ item }) => {
               const et = getEventType(item.tipo);
 
@@ -343,6 +374,14 @@ const mpStyles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     color: '#FFF',
+  },
+  emptyWrap: {
+    padding: 18,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 13,
+    color: '#6B7280',
   },
 });
 
