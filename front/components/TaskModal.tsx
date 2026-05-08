@@ -75,6 +75,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [detalle, setDetalle] = useState('');
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'view' | 'edit' | 'create'>('create');
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
 
   useEffect(() => {
     if (existingEvent) {
@@ -90,6 +91,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
       setDetalle('');
       setMode('create');
     }
+
+    setDeleteConfirmVisible(false);
   }, [existingEvent, visible]);
 
   const tipoOptions = useMemo(
@@ -98,10 +101,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
   );
 
   const deptOptions = useMemo(
-    () => DEPARTMENTS.map((d) => ({
-      label: d.name,
-      value: d.name,
-    })),
+    () =>
+      DEPARTMENTS.map((d) => ({
+        label: d.name,
+        value: d.name,
+      })),
     [],
   );
 
@@ -144,258 +148,302 @@ const TaskModal: React.FC<TaskModalProps> = ({
     return true;
   };
 
-const handleSave = async () => {
-  if (!validate() || !date || !member) return;
+  const handleSave = async () => {
+    if (!validate() || !date || !member) return;
 
-  setLoading(true);
-  try {
-    const deptName = selectedDept?.name || departamento;
+    setLoading(true);
+    try {
+      const deptName = selectedDept?.name || departamento;
 
-    if (existingEvent) {
-      await CalendarService.updateEvent(existingEvent.id, {
-        tipo,
-        departamento: deptName,
-        municipio,
-        detalle,
-      });
-    } else {
-      await CalendarService.createEvent({
-        memberId: member.id,
-        date,
-        tipo,
-        departamento: deptName,
-        municipio,
-        detalle,
-      });
+      if (existingEvent) {
+        await CalendarService.updateEvent(existingEvent.id, {
+          tipo,
+          departamento: deptName,
+          municipio,
+          detalle,
+        });
+      } else {
+        await CalendarService.createEvent({
+          memberId: member.id,
+          date,
+          tipo,
+          departamento: deptName,
+          municipio,
+          detalle,
+        });
+      }
+
+      onSaved();
+    } catch (err) {
+      console.error('Error guardando actividad:', err);
+      Alert.alert(
+        'Error',
+        err instanceof Error ? err.message : 'No se pudo guardar la actividad.',
+      );
+    } finally {
+      setLoading(false);
     }
+  };
 
-    onSaved();
-  } catch (err) {
-    console.error('Error guardando actividad:', err);
-    Alert.alert(
-      'Error',
-      err instanceof Error ? err.message : 'No se pudo guardar la actividad.'
-    );
-  } finally {
-    setLoading(false);
-  }
-};
+  const handleDeletePress = () => {
+    if (!existingEvent) return;
+    setDeleteConfirmVisible(true);
+  };
 
-  const handleDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!existingEvent) return;
 
-    Alert.alert(
-      'Eliminar actividad',
-      '¿Estás seguro de que deseas eliminar esta actividad?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            setLoading(true);
-            try {
-              await CalendarService.deleteEvent(existingEvent.id);
-              onDeleted();
-            } catch {
-              Alert.alert('Error', 'No se pudo eliminar la actividad.');
-            } finally {
-              setLoading(false);
-            }
-          },
-        },
-      ],
-    );
+    setLoading(true);
+    try {
+      await CalendarService.deleteEvent(existingEvent.id);
+      setDeleteConfirmVisible(false);
+      onDeleted();
+    } catch (err) {
+      console.error('Error eliminando actividad:', err);
+      setDeleteConfirmVisible(false);
+      Alert.alert('Error', 'No se pudo eliminar la actividad.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <>
+      <Modal
+        visible={visible}
+        transparent
+        animationType="slide"
+        onRequestClose={onClose}
       >
-        <View style={styles.sheet}>
-          <View style={[styles.header, member && { borderTopColor: member.color }]}>
-            <View style={styles.headerLeft}>
-              {member && (
-                <View style={[styles.avatar, { backgroundColor: member.color }]}>
-                  <Text style={styles.avatarText}>{member.initials}</Text>
+        <KeyboardAvoidingView
+          style={styles.overlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.sheet}>
+            <View style={[styles.header, member && { borderTopColor: member.color }]}>
+              <View style={styles.headerLeft}>
+                {member && (
+                  <View style={[styles.avatar, { backgroundColor: member.color }]}>
+                    <Text style={styles.avatarText}>{member.initials}</Text>
+                  </View>
+                )}
+                <View style={{ flexShrink: 1 }}>
+                  <Text style={styles.memberName}>
+                    {member?.name || 'Actividad'}
+                  </Text>
+                  <Text style={styles.dateLabel}>{titleLabel}</Text>
                 </View>
-              )}
-              <View style={{ flexShrink: 1 }}>
-                <Text style={styles.memberName}>
-                  {member?.name || 'Actividad'}
-                </Text>
-                <Text style={styles.dateLabel}>{titleLabel}</Text>
               </View>
+
+              <TouchableOpacity
+                onPress={onClose}
+                style={styles.closeBtn}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.closeBtnText}>✕</Text>
+              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              onPress={onClose}
-              style={styles.closeBtn}
-              activeOpacity={0.8}
+            <ScrollView
+              style={styles.body}
+              contentContainerStyle={styles.bodyContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
             >
-              <Text style={styles.closeBtnText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView
-            style={styles.body}
-            contentContainerStyle={styles.bodyContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            {selectedEventType && (
-              <View
-                style={[
-                  styles.typeBadge,
-                  { backgroundColor: selectedEventType.bgColor },
-                ]}
-              >
+              {selectedEventType && (
                 <View
                   style={[
-                    styles.typeDot,
-                    { backgroundColor: selectedEventType.color },
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.typeBadgeText,
-                    { color: selectedEventType.textColor },
+                    styles.typeBadge,
+                    { backgroundColor: selectedEventType.bgColor },
                   ]}
                 >
-                  {selectedEventType.label}
-                </Text>
-              </View>
-            )}
+                  <View
+                    style={[
+                      styles.typeDot,
+                      { backgroundColor: selectedEventType.color },
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.typeBadgeText,
+                      { color: selectedEventType.textColor },
+                    ]}
+                  >
+                    {selectedEventType.label}
+                  </Text>
+                </View>
+              )}
 
-            {isReadOnly ? (
-              <View>
-                <InfoRow
-                  label="TIPO"
-                  value={selectedEventType?.label || tipo || ''}
-                  color={selectedEventType?.color}
-                />
-                <InfoRow
-                  label="DEPARTAMENTO"
-                  value={selectedDept?.name || existingEvent?.departamento || ''}
-                />
-                <InfoRow
-                  label="MUNICIPIO"
-                  value={existingEvent?.municipio || municipio || ''}
-                />
-                {existingEvent?.detalle ? (
+              {isReadOnly ? (
+                <View>
                   <InfoRow
-                    label="DETALLE"
-                    value={existingEvent.detalle}
-                    multiline
+                    label="TIPO"
+                    value={selectedEventType?.label || tipo || ''}
+                    color={selectedEventType?.color}
                   />
-                ) : null}
-
-                <View style={styles.actionRow}>
-                  <TouchableOpacity
-                    style={styles.editBtn}
-                    onPress={() => setMode('edit')}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.editBtnText}>✏️  Editar</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.deleteBtn}
-                    onPress={handleDelete}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.deleteBtnText}>🗑  Eliminar</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <View>
-                <CustomPicker
-                  label="Tipo de actividad"
-                  value={tipo}
-                  options={tipoOptions}
-                  onSelect={setTipo}
-                  placeholder="Seleccionar tipo..."
-                />
-
-                <CustomPicker
-                  label="Departamento"
-                  value={departamento}
-                  options={deptOptions}
-                  onSelect={handleDeptChange}
-                  placeholder="Seleccionar departamento..."
-                  searchable
-                />
-
-                <CustomPicker
-                  label="Municipio"
-                  value={municipio}
-                  options={munOptions}
-                  onSelect={setMunicipio}
-                  placeholder={
-                    departamento
-                      ? 'Seleccionar municipio...'
-                      : 'Primero selecciona un departamento'
-                  }
-                  searchable
-                />
-
-                <View style={styles.fieldWrapper}>
-                  <Text style={styles.fieldLabel}>DETALLE</Text>
-                  <TextInput
-                    style={styles.textArea}
-                    value={detalle}
-                    onChangeText={setDetalle}
-                    placeholder="Descripción de la actividad (opcional)..."
-                    placeholderTextColor="#9CA3AF"
-                    multiline
-                    numberOfLines={4}
-                    textAlignVertical="top"
+                  <InfoRow
+                    label="DEPARTAMENTO"
+                    value={selectedDept?.name || existingEvent?.departamento || ''}
                   />
-                </View>
+                  <InfoRow
+                    label="MUNICIPIO"
+                    value={existingEvent?.municipio || municipio || ''}
+                  />
+                  {existingEvent?.detalle ? (
+                    <InfoRow
+                      label="DETALLE"
+                      value={existingEvent.detalle}
+                      multiline
+                    />
+                  ) : null}
 
-                <View style={styles.actionRow}>
-                  {mode === 'edit' && (
+                  <View style={styles.actionRow}>
                     <TouchableOpacity
-                      style={styles.cancelBtn}
-                      onPress={() => setMode('view')}
+                      style={styles.editBtn}
+                      onPress={() => setMode('edit')}
                       activeOpacity={0.8}
                     >
-                      <Text style={styles.cancelBtnText}>Cancelar</Text>
+                      <Text style={styles.editBtnText}>✏️  Editar</Text>
                     </TouchableOpacity>
-                  )}
 
-                  <TouchableOpacity
-                    style={[
-                      styles.saveBtn,
-                      { backgroundColor: member?.color || '#2563EB' },
-                    ]}
-                    onPress={handleSave}
-                    disabled={loading}
-                    activeOpacity={0.85}
-                  >
-                    {loading ? (
-                      <ActivityIndicator color="#FFF" />
-                    ) : (
-                      <Text style={styles.saveBtnText}>
-                        {mode === 'edit' ? '✓  Actualizar' : '✓  Guardar'}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.deleteBtn}
+                      onPress={handleDeletePress}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.deleteBtnText}>🗑  Eliminar</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            )}
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+              ) : (
+                <View>
+                  <CustomPicker
+                    label="Tipo de actividad"
+                    value={tipo}
+                    options={tipoOptions}
+                    onSelect={setTipo}
+                    placeholder="Seleccionar tipo..."
+                  />
+
+                  <CustomPicker
+                    label="Departamento"
+                    value={departamento}
+                    options={deptOptions}
+                    onSelect={handleDeptChange}
+                    placeholder="Seleccionar departamento..."
+                    searchable
+                  />
+
+                  <CustomPicker
+                    label="Municipio"
+                    value={municipio}
+                    options={munOptions}
+                    onSelect={setMunicipio}
+                    placeholder={
+                      departamento
+                        ? 'Seleccionar municipio...'
+                        : 'Primero selecciona un departamento'
+                    }
+                    searchable
+                  />
+
+                  <View style={styles.fieldWrapper}>
+                    <Text style={styles.fieldLabel}>DETALLE</Text>
+                    <TextInput
+                      style={styles.textArea}
+                      value={detalle}
+                      onChangeText={setDetalle}
+                      placeholder="Descripción de la actividad (opcional)..."
+                      placeholderTextColor="#9CA3AF"
+                      multiline
+                      numberOfLines={4}
+                      textAlignVertical="top"
+                    />
+                  </View>
+
+                  <View style={styles.actionRow}>
+                    {mode === 'edit' && (
+                      <TouchableOpacity
+                        style={styles.cancelBtn}
+                        onPress={() => setMode('view')}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.cancelBtnText}>Cancelar</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    <TouchableOpacity
+                      style={[
+                        styles.saveBtn,
+                        { backgroundColor: member?.color || '#2563EB' },
+                      ]}
+                      onPress={handleSave}
+                      disabled={loading}
+                      activeOpacity={0.85}
+                    >
+                      {loading ? (
+                        <ActivityIndicator color="#FFF" />
+                      ) : (
+                        <Text style={styles.saveBtnText}>
+                          {mode === 'edit' ? '✓  Actualizar' : '✓  Guardar'}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={deleteConfirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteConfirmVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.confirmOverlay}
+          activeOpacity={1}
+          onPress={() => setDeleteConfirmVisible(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            style={styles.confirmSheet}
+            onPress={() => {}}
+          >
+            <Text style={styles.confirmTitle}>Eliminar actividad</Text>
+            <Text style={styles.confirmText}>
+              ¿Estás seguro de que deseas eliminar esta actividad?
+            </Text>
+
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.confirmCancel}
+                onPress={() => setDeleteConfirmVisible(false)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.confirmCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.confirmDelete}
+                onPress={handleConfirmDelete}
+                activeOpacity={0.85}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <Text style={styles.confirmDeleteText}>Eliminar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+    </>
   );
 };
 
@@ -603,6 +651,58 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   saveBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  confirmSheet: {
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 18,
+  },
+  confirmTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  confirmText: {
+    fontSize: 14,
+    color: '#4B5563',
+    lineHeight: 20,
+    marginBottom: 18,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  confirmCancel: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  confirmCancelText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  confirmDelete: {
+    flex: 1,
+    backgroundColor: '#DC2626',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  confirmDeleteText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#FFF',
