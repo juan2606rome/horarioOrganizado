@@ -10,46 +10,20 @@ import {
   View,
 } from 'react-native';
 import { getEventType } from '../data/eventTypes';
-import { TEAM_MEMBERS } from '../data/teamMembers';
 import { CalendarService } from '../services/calendarService';
 import { CalendarEvent, TeamMember } from '../types';
 
 const YEAR = 2026;
 
 const MONTHS_ES = [
-  'Enero',
-  'Febrero',
-  'Marzo',
-  'Abril',
-  'Mayo',
-  'Junio',
-  'Julio',
-  'Agosto',
-  'Septiembre',
-  'Octubre',
-  'Noviembre',
-  'Diciembre',
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
-const MONTHS_ES_SHORT = [
-  'ene',
-  'feb',
-  'mar',
-  'abr',
-  'may',
-  'jun',
-  'jul',
-  'ago',
-  'sep',
-  'oct',
-  'nov',
-  'dic',
-];
-
+const MONTHS_ES_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const DAYS_ES = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
-const getDaysInMonth = (year: number, month: number) =>
-  new Date(year, month, 0).getDate();
+const getDaysInMonth = (year: number, month: number) => new Date(year, month, 0).getDate();
 
 const getFirstDayOfMonth = (year: number, month: number) => {
   const day = new Date(year, month - 1, 1).getDay();
@@ -65,12 +39,21 @@ const todayStr = formatDate(
   new Date().getDate(),
 );
 
-const CombinedScreen: React.FC = () => {
+interface CombinedScreenProps {
+  members: TeamMember[];
+}
+
+const isPriorityMemberName = (name?: string) =>
+  !!name && /\bdirector(a)?\b/i.test(name);
+
+const getDisplayName = (member?: TeamMember) =>
+  member?.name?.trim() || 'Integrante';
+
+const CombinedScreen: React.FC<CombinedScreenProps> = ({ members }) => {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
-
   const [dayModalVisible, setDayModalVisible] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedDayEvents, setSelectedDayEvents] = useState<CalendarEvent[]>([]);
@@ -96,10 +79,39 @@ const CombinedScreen: React.FC = () => {
     loadEvents();
   };
 
-  const getEventsForDate = (date: string) => events.filter((e) => e.date === date);
+  const getMemberById = useCallback(
+    (id: string): TeamMember | undefined => members.find((m) => m.id === id),
+    [members],
+  );
 
-  const getMemberById = (id: string): TeamMember | undefined =>
-    TEAM_MEMBERS.find((m) => m.id === id);
+  const sortEventsForDisplay = useCallback(
+    (list: CalendarEvent[]) => {
+      return [...list].sort((a, b) => {
+        const am = getMemberById(a.memberId);
+        const bm = getMemberById(b.memberId);
+
+        const aPriority = isPriorityMemberName(am?.name) ? 0 : 1;
+        const bPriority = isPriorityMemberName(bm?.name) ? 0 : 1;
+
+        if (aPriority !== bPriority) return aPriority - bPriority;
+
+        const aName = getDisplayName(am);
+        const bName = getDisplayName(bm);
+        const byName = aName.localeCompare(bName, 'es', { sensitivity: 'base' });
+        if (byName !== 0) return byName;
+
+        const aCreated = a.createdAt || '';
+        const bCreated = b.createdAt || '';
+        return aCreated.localeCompare(bCreated);
+      });
+    },
+    [getMemberById],
+  );
+
+  const getEventsForDate = useCallback(
+    (date: string) => sortEventsForDisplay(events.filter((e) => e.date === date)),
+    [events, sortEventsForDisplay],
+  );
 
   const openDayModal = (date: string) => {
     const dayEvents = getEventsForDate(date);
@@ -107,6 +119,15 @@ const CombinedScreen: React.FC = () => {
     setSelectedDate(date);
     setSelectedDayEvents(dayEvents);
     setDayModalVisible(true);
+  };
+
+  const months = selectedMonth !== null ? [selectedMonth] : Array.from({ length: 12 }, (_, i) => i + 1);
+
+  const getPriorityLabel = (memberName?: string) => {
+    if (!memberName) return '';
+    if (/directora/i.test(memberName)) return 'DIRECCIÓN';
+    if (/director/i.test(memberName)) return 'DIRECCIÓN';
+    return '';
   };
 
   if (loading) {
@@ -118,11 +139,6 @@ const CombinedScreen: React.FC = () => {
     );
   }
 
-  const months =
-    selectedMonth !== null
-      ? [selectedMonth]
-      : Array.from({ length: 12 }, (_, i) => i + 1);
-
   return (
     <>
       <ScrollView
@@ -130,11 +146,7 @@ const CombinedScreen: React.FC = () => {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#2563EB']}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563EB']} />
         }
       >
         <View style={styles.filterSection}>
@@ -168,19 +180,38 @@ const CombinedScreen: React.FC = () => {
         <View style={styles.memberLegend}>
           <Text style={styles.legendTitle}>Integrantes:</Text>
           <View style={styles.legendRow}>
-            {TEAM_MEMBERS.map((m) => (
-              <View key={m.id} style={styles.memberChip}>
-                <View style={[styles.memberDot, { backgroundColor: m.color }]} />
-                <Text style={styles.memberChipText}>{m.name}</Text>
-              </View>
-            ))}
+            {members.length === 0 ? (
+              <Text style={styles.noMembersText}>No hay integrantes cargados</Text>
+            ) : (
+              members.map((m) => {
+                const priority = isPriorityMemberName(m.name);
+                return (
+                  <View
+                    key={m.id}
+                    style={[
+                      styles.memberChip,
+                      priority && styles.memberChipPriority,
+                    ]}
+                  >
+                    <View style={[styles.memberDot, { backgroundColor: m.color }]} />
+                    <Text style={styles.memberChipText} numberOfLines={1}>
+                      {m.name}
+                    </Text>
+                    {priority ? (
+                      <View style={styles.priorityMiniBadge}>
+                        <Text style={styles.priorityMiniText}>DIR</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                );
+              })
+            )}
           </View>
         </View>
 
         {months.map((month) => {
           const daysInMonth = getDaysInMonth(YEAR, month);
           const firstDayOffset = getFirstDayOfMonth(YEAR, month);
-
           const monthEvents = events.filter((e) => {
             const [, m] = e.date.split('-').map(Number);
             return m === month;
@@ -242,15 +273,20 @@ const CombinedScreen: React.FC = () => {
                             const m = getMemberById(ev.memberId);
                             const et = getEventType(ev.tipo);
                             const chipColor = m?.color || et.color;
+                            const priority = isPriorityMemberName(m?.name);
 
                             return (
                               <View
                                 key={ev.id}
-                                style={[styles.eventChip, { borderLeftColor: chipColor }]}
+                                style={[
+                                  styles.eventChip,
+                                  { borderLeftColor: chipColor },
+                                  priority && styles.priorityEventChip,
+                                ]}
                               >
                                 <View style={[styles.eventChipDot, { backgroundColor: chipColor }]} />
                                 <Text style={styles.eventChipText} numberOfLines={1}>
-                                  {m?.initials} · {et.label}
+                                  {getDisplayName(m)} · {et.label}
                                 </Text>
                               </View>
                             );
@@ -285,11 +321,7 @@ const CombinedScreen: React.FC = () => {
           activeOpacity={1}
           onPress={() => setDayModalVisible(false)}
         >
-          <TouchableOpacity
-            style={styles.modalSheet}
-            activeOpacity={1}
-            onPress={() => {}}
-          >
+          <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 {selectedDate
@@ -307,32 +339,57 @@ const CombinedScreen: React.FC = () => {
               {selectedDayEvents.map((ev) => {
                 const m = getMemberById(ev.memberId);
                 const et = getEventType(ev.tipo);
+                const priority = isPriorityMemberName(m?.name);
+                const priorityLabel = getPriorityLabel(m?.name);
 
                 return (
-                  <View key={ev.id} style={styles.modalItem}>
+                  <View
+                    key={ev.id}
+                    style={[
+                      styles.modalItem,
+                      priority && styles.modalItemPriority,
+                    ]}
+                  >
                     <View style={styles.modalItemTop}>
-                      <View style={[styles.memberInitialBadge, { backgroundColor: m?.color || '#2563EB' }]}>
-                        <Text style={styles.memberInitialText}>{m?.initials || '—'}</Text>
+                      <View
+                        style={[
+                          styles.memberBadge,
+                          { backgroundColor: m?.color || '#2563EB' },
+                        ]}
+                      >
+                        <Text style={styles.memberBadgeText}>
+                          {m?.name?.slice(0, 2).toUpperCase() || '—'}
+                        </Text>
                       </View>
-                      <Text style={styles.modalMemberName}>{m?.name || 'Integrante'}</Text>
+
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.modalMemberName}>
+                          {getDisplayName(m)}
+                        </Text>
+                        {priorityLabel ? (
+                          <View style={styles.priorityBadge}>
+                            <Text style={styles.priorityBadgeText}>{priorityLabel}</Text>
+                          </View>
+                        ) : null}
+                      </View>
                     </View>
 
                     <View style={[styles.modalTypeBadge, { backgroundColor: et.bgColor }]}>
-                      <Text style={[styles.modalTypeText, { color: et.color }]}>{et.label}</Text>
+                      <Text style={[styles.modalTypeText, { color: et.color }]}>
+                        {et.label}
+                      </Text>
                     </View>
 
                     <Text style={styles.modalLocation}>
                       {ev.municipio}, {ev.departamento}
                     </Text>
 
-                    {ev.detalle ? (
-                      <Text style={styles.modalDetalle}>{ev.detalle}</Text>
-                    ) : null}
+                    {ev.detalle ? <Text style={styles.modalDetalle}>{ev.detalle}</Text> : null}
                   </View>
                 );
               })}
             </ScrollView>
-          </TouchableOpacity>
+          </View>
         </TouchableOpacity>
       </Modal>
     </>
@@ -340,23 +397,11 @@ const CombinedScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F1F5F9',
-  },
-  content: {
-    padding: 12,
-  },
-  loading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
+  container: { flex: 1, backgroundColor: '#F1F5F9' },
+  content: { padding: 12 },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingText: { fontSize: 14, color: '#6B7280' },
+
   filterSection: {
     backgroundColor: '#FFF',
     borderRadius: 14,
@@ -376,9 +421,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     textTransform: 'uppercase',
   },
-  monthScroll: {
-    flexDirection: 'row',
-  },
+  monthScroll: { flexDirection: 'row' },
   monthChip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
@@ -386,17 +429,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     marginRight: 6,
   },
-  monthChipActive: {
-    backgroundColor: '#2563EB',
-  },
-  monthChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  monthChipTextActive: {
-    color: '#FFF',
-  },
+  monthChipActive: { backgroundColor: '#2563EB' },
+  monthChipText: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
+  monthChipTextActive: { color: '#FFF' },
+
   memberLegend: {
     backgroundColor: '#FFF',
     borderRadius: 14,
@@ -416,11 +452,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     textTransform: 'uppercase',
   },
-  legendRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
+  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  noMembersText: { fontSize: 13, color: '#9CA3AF', fontStyle: 'italic' },
   memberChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -431,17 +464,23 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    maxWidth: '100%',
   },
-  memberDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  memberChipPriority: {
+    borderColor: '#FB923C',
+    backgroundColor: '#FFF7ED',
   },
-  memberChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#374151',
+  memberDot: { width: 8, height: 8, borderRadius: 4 },
+  memberChipText: { fontSize: 12, fontWeight: '600', color: '#374151' },
+  priorityMiniBadge: {
+    backgroundColor: '#FED7AA',
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 2,
   },
+  priorityMiniText: { fontSize: 9, fontWeight: '900', color: '#9A3412' },
+
   monthBlock: {
     backgroundColor: '#FFF',
     borderRadius: 16,
@@ -461,46 +500,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
-  monthName: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#FFF',
-    letterSpacing: -0.3,
-  },
+  monthName: { fontSize: 17, fontWeight: '800', color: '#FFF', letterSpacing: -0.3 },
   monthBadge: {
     backgroundColor: 'rgba(255,255,255,0.2)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
-  monthBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFF',
-  },
+  monthBadgeText: { fontSize: 12, fontWeight: '600', color: '#FFF' },
   weekRow: {
     flexDirection: 'row',
     backgroundColor: '#EFF6FF',
     paddingVertical: 8,
     paddingHorizontal: 4,
   },
-  weekDay: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#1E40AF',
-  },
-  gridRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-  },
-  emptyCell: {
-    flex: 1,
-    margin: 2,
-    minHeight: 92,
-  },
+  weekDay: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '800', color: '#1E40AF' },
+  gridRow: { flexDirection: 'row', paddingHorizontal: 4, paddingVertical: 2 },
+  emptyCell: { flex: 1, margin: 2, minHeight: 92 },
   dayCell: {
     flex: 1,
     margin: 2,
@@ -511,28 +527,11 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     padding: 6,
   },
-  todayCell: {
-    borderWidth: 2,
-    borderColor: '#2563EB',
-    backgroundColor: '#EFF6FF',
-  },
-  hasEventsCell: {
-    backgroundColor: '#FFFFFF',
-  },
-  cellDay: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#374151',
-    alignSelf: 'flex-start',
-  },
-  todayDayText: {
-    color: '#2563EB',
-    fontWeight: '900',
-  },
-  eventStack: {
-    marginTop: 6,
-    gap: 4,
-  },
+  todayCell: { borderWidth: 2, borderColor: '#2563EB', backgroundColor: '#EFF6FF' },
+  hasEventsCell: { backgroundColor: '#FFFFFF' },
+  cellDay: { fontSize: 12, fontWeight: '700', color: '#374151', alignSelf: 'flex-start' },
+  todayDayText: { color: '#2563EB', fontWeight: '900' },
+  eventStack: { marginTop: 6, gap: 4 },
   eventChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -543,17 +542,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 6,
   },
-  eventChipDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 999,
-  },
-  eventChipText: {
-    flex: 1,
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#334155',
-  },
+  priorityEventChip: { backgroundColor: '#FFF7ED' },
+  eventChipDot: { width: 7, height: 7, borderRadius: 999 },
+  eventChipText: { flex: 1, fontSize: 9, fontWeight: '700', color: '#334155' },
   moreChip: {
     alignSelf: 'flex-start',
     backgroundColor: '#EEF2FF',
@@ -561,11 +552,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  moreChipText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#3730A3',
-  },
+  moreChipText: { fontSize: 10, fontWeight: '800', color: '#3730A3' },
+
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -591,11 +579,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 10,
   },
-  modalClose: {
-    fontSize: 18,
-    color: '#6B7280',
-    fontWeight: '700',
-  },
+  modalClose: { fontSize: 18, color: '#6B7280', fontWeight: '700' },
   modalItem: {
     borderWidth: 1,
     borderColor: '#E5E7EB',
@@ -604,29 +588,34 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     backgroundColor: '#FAFAFA',
   },
+  modalItemPriority: {
+    borderColor: '#FB923C',
+    backgroundColor: '#FFF7ED',
+  },
   modalItemTop: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     marginBottom: 8,
   },
-  memberInitialBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  memberBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  memberInitialText: {
-    color: '#FFF',
-    fontSize: 10,
-    fontWeight: '900',
+  memberBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
+  modalMemberName: { fontSize: 14, fontWeight: '800', color: '#111827' },
+  priorityBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    backgroundColor: '#FED7AA',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
   },
-  modalMemberName: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#111827',
-  },
+  priorityBadgeText: { fontSize: 10, fontWeight: '900', color: '#9A3412', letterSpacing: 0.3 },
   modalTypeBadge: {
     alignSelf: 'flex-start',
     borderRadius: 999,
@@ -634,21 +623,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginBottom: 6,
   },
-  modalTypeText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  modalLocation: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  modalDetalle: {
-    marginTop: 4,
-    fontSize: 12,
-    color: '#64748B',
-    lineHeight: 18,
-  },
+  modalTypeText: { fontSize: 11, fontWeight: '800' },
+  modalLocation: { fontSize: 12, fontWeight: '600', color: '#475569' },
+  modalDetalle: { marginTop: 4, fontSize: 12, color: '#64748B', lineHeight: 18 },
 });
 
 export default CombinedScreen;

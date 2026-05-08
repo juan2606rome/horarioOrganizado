@@ -1,5 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Dimensions,
   Platform,
   SafeAreaView,
@@ -10,9 +11,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { TEAM_MEMBERS } from '../data/teamMembers';
+
 import CombinedScreen from '../screens/CombinedScreen';
 import MemberCalendarScreen from '../screens/MemberCalendarScreen';
+import { CalendarService } from '../services/calendarService';
+import { TeamMember } from '../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -22,20 +25,57 @@ type Tab = {
   type: 'member' | 'combined';
 };
 
-const TABS: Tab[] = [
-  { id: 'combined', label: 'Horario\nCombinado', type: 'combined' },
-  ...TEAM_MEMBERS.map((m) => ({
-    id: m.id,
-    label: m.name,
-    type: 'member' as const,
-  })),
-];
-
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('combined');
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(true);
+
   const tabScrollRef = useRef<ScrollView>(null);
 
-  const activeMember = TEAM_MEMBERS.find((m) => m.id === activeTab) || null;
+  useEffect(() => {
+    let mounted = true;
+
+    const loadMembers = async () => {
+      try {
+        setLoadingMembers(true);
+        const data = await CalendarService.getMembers();
+
+        if (!mounted) return;
+        setMembers(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Error cargando miembros:', err);
+        if (mounted) setMembers([]);
+      } finally {
+        if (mounted) setLoadingMembers(false);
+      }
+    };
+
+    loadMembers();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const tabs: Tab[] = useMemo(
+    () => [
+      { id: 'combined', label: 'Horario\nCombinado', type: 'combined' },
+      ...members.map((m) => ({
+        id: m.id,
+        label: m.name,
+        type: 'member' as const,
+      })),
+    ],
+    [members],
+  );
+
+  const activeMember = members.find((m) => m.id === activeTab) || null;
+
+  useEffect(() => {
+    if (activeTab !== 'combined' && !activeMember && members.length > 0) {
+      setActiveTab('combined');
+    }
+  }, [activeTab, activeMember, members.length]);
 
   const handleTabPress = (tabId: string, index: number) => {
     setActiveTab(tabId);
@@ -76,70 +116,83 @@ export default function App() {
       </View>
 
       <View style={styles.tabBarContainer}>
-        <ScrollView
-          ref={tabScrollRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabBar}
-          bounces={false}
-        >
-          {TABS.map((tab, index) => {
-            const isActive = activeTab === tab.id;
-            const member = TEAM_MEMBERS.find((m) => m.id === tab.id);
-            const accentColor = member?.color || '#2563EB';
+        {loadingMembers ? (
+          <View style={styles.loadingTabs}>
+            <ActivityIndicator size="small" color="#2563EB" />
+            <Text style={styles.loadingTabsText}>Cargando integrantes...</Text>
+          </View>
+        ) : (
+          <ScrollView
+            ref={tabScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabBar}
+            bounces={false}
+          >
+            {tabs.map((tab, index) => {
+              const isActive = activeTab === tab.id;
+              const member = members.find((m) => m.id === tab.id);
+              const accentColor = member?.color || '#2563EB';
 
-            return (
-              <TouchableOpacity
-                key={tab.id}
-                style={[
-                  styles.tab,
-                  isActive && styles.tabActive,
-                  isActive && { borderBottomColor: accentColor },
-                ]}
-                onPress={() => handleTabPress(tab.id, index)}
-                activeOpacity={0.7}
-              >
-                {tab.type === 'combined' ? (
-                  <Text style={styles.tabIcon}>🗓</Text>
-                ) : (
-                  <View
-                    style={[
-                      styles.tabAvatar,
-                      { backgroundColor: isActive ? accentColor : '#E5E7EB' },
-                    ]}
-                  >
-                    <Text
+              return (
+                <TouchableOpacity
+                  key={tab.id}
+                  style={[
+                    styles.tab,
+                    isActive && styles.tabActive,
+                    isActive && { borderBottomColor: accentColor },
+                  ]}
+                  onPress={() => handleTabPress(tab.id, index)}
+                  activeOpacity={0.7}
+                >
+                  {tab.type === 'combined' ? (
+                    <Text style={styles.tabIcon}>🗓</Text>
+                  ) : (
+                    <View
                       style={[
-                        styles.tabAvatarText,
-                        { color: isActive ? '#FFF' : '#6B7280' },
+                        styles.tabAvatar,
+                        { backgroundColor: isActive ? accentColor : '#E5E7EB' },
                       ]}
                     >
-                      {member?.initials}
-                    </Text>
-                  </View>
-                )}
+                      <Text
+                        style={[
+                          styles.tabAvatarText,
+                          { color: isActive ? '#FFF' : '#6B7280' },
+                        ]}
+                      >
+                        {member?.initials || '??'}
+                      </Text>
+                    </View>
+                  )}
 
-                <Text
-                  style={[
-                    styles.tabLabel,
-                    isActive && { color: accentColor, fontWeight: '700' },
-                  ]}
-                  numberOfLines={2}
-                >
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+                  <Text
+                    style={[
+                      styles.tabLabel,
+                      isActive && { color: accentColor, fontWeight: '700' },
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
       </View>
 
       <View style={styles.screenContainer}>
         {activeTab === 'combined' ? (
-          <CombinedScreen />
+          <CombinedScreen members={members} />
         ) : activeMember ? (
           <MemberCalendarScreen member={activeMember} />
-        ) : null}
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateText}>
+              No hay integrante seleccionado.
+            </Text>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -163,6 +216,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flexShrink: 1,
   },
   headerIcon: {
     width: 44,
@@ -212,6 +266,18 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
   },
+  loadingTabs: {
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  loadingTabsText: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
   tabBar: {
     paddingHorizontal: 6,
     paddingVertical: 4,
@@ -256,5 +322,15 @@ const styles = StyleSheet.create({
   screenContainer: {
     flex: 1,
     backgroundColor: '#F1F5F9',
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: '#6B7280',
   },
 });

@@ -1,3 +1,4 @@
+// MemberCalendarScreen.tsx
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -24,20 +25,20 @@ const MemberCalendarScreen: React.FC<MemberCalendarScreenProps> = ({ member }) =
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-const loadEvents = useCallback(async () => {
-  try {
-    const data = await CalendarService.getEvents({
-      memberId: member.id,
-    });
+  const loadEvents = useCallback(async () => {
+    try {
+      const data = await CalendarService.getEvents({
+        memberId: member.id,
+      });
 
-    setEvents(data);
-  } catch (err) {
-    console.error('Error loading events:', err);
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
-  }
-}, [member.id]);
+      setEvents(data);
+    } catch (err) {
+      console.error('Error loading events:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [member.id]);
 
   useEffect(() => {
     setLoading(true);
@@ -49,7 +50,6 @@ const loadEvents = useCallback(async () => {
     loadEvents();
   };
 
-  // Stats
   const totalEvents = events.length;
   const typeBreakdown = EVENT_TYPES.map((et) => ({
     ...et,
@@ -79,13 +79,16 @@ const loadEvents = useCallback(async () => {
         />
       }
     >
-      {/* Member stats bar */}
       <View style={[styles.statsBar, { borderLeftColor: member.color }]}>
         <View style={styles.statItem}>
-          <Text style={[styles.statNumber, { color: member.color }]}>{totalEvents}</Text>
+          <Text style={[styles.statNumber, { color: member.color }]}>
+            {totalEvents}
+          </Text>
           <Text style={styles.statLabel}>Actividades{'\n'}en 2026</Text>
         </View>
+
         <View style={styles.statDivider} />
+
         <View style={styles.typesRow}>
           {typeBreakdown.length === 0 ? (
             <Text style={styles.noActivity}>Sin actividades registradas</Text>
@@ -102,7 +105,6 @@ const loadEvents = useCallback(async () => {
         </View>
       </View>
 
-      {/* Legend */}
       <View style={styles.legend}>
         <Text style={styles.legendTitle}>Leyenda de tipos:</Text>
         <View style={styles.legendItems}>
@@ -115,7 +117,6 @@ const loadEvents = useCallback(async () => {
         </View>
       </View>
 
-      {/* 12 monthly calendars */}
       {MONTHS.map((month) => (
         <MonthCalendar
           key={month}
