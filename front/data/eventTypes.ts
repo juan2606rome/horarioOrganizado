@@ -2,53 +2,74 @@ import { EventType } from '../types';
 
 export const EVENT_TYPES: EventType[] = [
   {
-    id: 'visita_domiciliaria',
-    label: 'Visita Domiciliaria',
+    id: 'mesa_sostenibilidad_1',
+    label: 'Mesa de sostenibilidad 1',
     color: '#059669',
     bgColor: '#D1FAE5',
     textColor: '#065F46',
   },
   {
-    id: 'reunion',
-    label: 'Reunión de Equipo',
+    id: 'mesa_sostenibilidad_2',
+    label: 'Mesa de sostenibilidad 2',
     color: '#2563EB',
     bgColor: '#DBEAFE',
     textColor: '#1E3A8A',
   },
   {
-    id: 'evento_comunitario',
-    label: 'Evento Comunitario',
+    id: 'socializacion',
+    label: 'Socialización',
     color: '#7C3AED',
     bgColor: '#EDE9FE',
     textColor: '#4C1D95',
   },
   {
-    id: 'capacitacion',
-    label: 'Capacitación',
+    id: 'av1',
+    label: 'AV1',
     color: '#D97706',
     bgColor: '#FEF3C7',
     textColor: '#92400E',
   },
   {
-    id: 'jornada_salud',
-    label: 'Jornada de Salud',
+    id: 'av2',
+    label: 'AV2',
     color: '#DC2626',
     bgColor: '#FEE2E2',
     textColor: '#7F1D1D',
   },
   {
-    id: 'trabajo_campo',
-    label: 'Trabajo de Campo',
+    id: 'av3',
+    label: 'AV3',
     color: '#0891B2',
     bgColor: '#CFFAFE',
     textColor: '#164E63',
   },
   {
-    id: 'administrativo',
-    label: 'Administrativo',
+    id: 'fecha_entrega_obra',
+    label: 'Fecha de entrega obra',
     color: '#4B5563',
     bgColor: '#F3F4F6',
     textColor: '#1F2937',
+  },
+  {
+    id: 'agenda_institucional',
+    label: 'Agenda institucional',
+    color: '#9333EA',
+    bgColor: '#F3E8FF',
+    textColor: '#581C87',
+  },
+  {
+    id: 'dialogos_gobernanza',
+    label: 'Diálogos de Gobernanza',
+    color: '#0F766E',
+    bgColor: '#CCFBF1',
+    textColor: '#134E4A',
+  },
+  {
+    id: 'visitas_pertinencia',
+    label: 'Visitas de pertinencia',
+    color: '#EA580C',
+    bgColor: '#FFEDD5',
+    textColor: '#9A3412',
   },
   {
     id: 'feria',
@@ -58,8 +79,8 @@ export const EVENT_TYPES: EventType[] = [
     textColor: '#831843',
   },
   {
-    id: 'otro',
-    label: 'Otro',
+    id: 'otra_actividad',
+    label: 'Otra actividad',
     color: '#6B7280',
     bgColor: '#F9FAFB',
     textColor: '#374151',
@@ -67,4 +88,5 @@ export const EVENT_TYPES: EventType[] = [
 ];
 
 export const getEventType = (id: string): EventType =>
-  EVENT_TYPES.find((e) => e.id === id) || EVENT_TYPES[EVENT_TYPES.length - 1];
+  EVENT_TYPES.find((e) => e.id === id) ||
+  EVENT_TYPES[EVENT_TYPES.length - 1];
