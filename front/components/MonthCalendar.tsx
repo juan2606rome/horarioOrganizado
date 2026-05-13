@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   FlatList,
   Modal,
@@ -57,7 +57,6 @@ const getDaysInMonth = (year: number, month: number) =>
   new Date(year, month, 0).getDate();
 
 const getFirstDayOfMonth = (year: number, month: number) => {
-  // Monday = 0
   const day = new Date(year, month - 1, 1).getDay();
   return day === 0 ? 6 : day - 1;
 };
@@ -71,6 +70,8 @@ const todayStr = formatDate(
   today.getMonth() + 1,
   today.getDate(),
 );
+
+type FeedbackVariant = 'success' | 'error';
 
 const MonthCalendar: React.FC<MonthCalendarProps> = ({
   year,
@@ -86,6 +87,43 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [multiEventVisible, setMultiEventVisible] = useState(false);
 
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackVariant, setFeedbackVariant] = useState<FeedbackVariant>('success');
+  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showFeedback = useCallback((message: string, variant: FeedbackVariant) => {
+    if (feedbackTimerRef.current) {
+      clearTimeout(feedbackTimerRef.current);
+      feedbackTimerRef.current = null;
+    }
+
+    setFeedbackMessage(message);
+    setFeedbackVariant(variant);
+    setFeedbackVisible(true);
+
+    feedbackTimerRef.current = setTimeout(() => {
+      setFeedbackVisible(false);
+      feedbackTimerRef.current = null;
+    }, 1500);
+  }, []);
+
+  const hideFeedback = useCallback(() => {
+    if (feedbackTimerRef.current) {
+      clearTimeout(feedbackTimerRef.current);
+      feedbackTimerRef.current = null;
+    }
+    setFeedbackVisible(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (feedbackTimerRef.current) {
+        clearTimeout(feedbackTimerRef.current);
+      }
+    };
+  }, []);
+
   const daysInMonth = getDaysInMonth(year, month);
   const firstDayOffset = getFirstDayOfMonth(year, month);
 
@@ -99,20 +137,6 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
   const getEventsForDate = (date: string) =>
     events.filter((e) => e.date === date);
 
-  const openCreateModal = (date: string) => {
-    if (readOnly) return;
-    setSelectedDate(date);
-    setSelectedEvent(null);
-    setModalVisible(true);
-  };
-
-  const openEditModal = (date: string, ev: CalendarEvent) => {
-    if (readOnly) return;
-    setSelectedDate(date);
-    setSelectedEvent(ev);
-    setModalVisible(true);
-  };
-
   const handleDayPress = (date: string) => {
     if (readOnly) return;
 
@@ -121,8 +145,6 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
     setSelectedDate(date);
     setDayEvents(evts);
 
-    // Si no hay eventos, abre crear.
-    // Si hay 1 o más, abre el picker para editar una o agregar otra.
     if (evts.length === 0) {
       setSelectedEvent(null);
       setModalVisible(true);
@@ -136,11 +158,6 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
     const [, m] = e.date.split('-').map(Number);
     return m === month;
   }).length;
-
-  const monthEventsVisible = events.filter((e) => {
-    const [, m] = e.date.split('-').map(Number);
-    return m === month;
-  });
 
   return (
     <View style={styles.container}>
@@ -211,16 +228,73 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
           setSelectedEvent(null);
         }}
         onSaved={() => {
+          const isEdit = !!selectedEvent;
           setModalVisible(false);
           setSelectedEvent(null);
           onEventsChanged();
+
+          setTimeout(() => {
+            showFeedback(
+              isEdit
+                ? 'Actividad actualizada correctamente.'
+                : 'Actividad guardada correctamente.',
+              'success',
+            );
+          }, 180);
         }}
         onDeleted={() => {
           setModalVisible(false);
           setSelectedEvent(null);
           onEventsChanged();
+
+          setTimeout(() => {
+            showFeedback('Actividad eliminada correctamente.', 'success');
+          }, 180);
+        }}
+        onFeedback={(message, variant = 'error') => {
+          showFeedback(message, variant);
         }}
       />
+
+      <Modal
+        visible={feedbackVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={hideFeedback}
+      >
+        <TouchableOpacity
+          style={styles.feedbackOverlay}
+          activeOpacity={1}
+          onPress={hideFeedback}
+        >
+          <View
+            style={[
+              styles.feedbackCard,
+              feedbackVariant === 'success'
+                ? styles.feedbackCardSuccess
+                : styles.feedbackCardError,
+            ]}
+          >
+            <View style={styles.feedbackTextWrap}>
+              <Text
+                style={[
+                  styles.feedbackTitle,
+                  feedbackVariant === 'success'
+                    ? styles.feedbackTitleSuccess
+                    : styles.feedbackTitleError,
+                ]}
+              >
+                {feedbackVariant === 'success' ? 'Listo' : 'Error'}
+              </Text>
+              <Text style={styles.feedbackMessage}>{feedbackMessage}</Text>
+            </View>
+
+            <TouchableOpacity onPress={hideFeedback} activeOpacity={0.8}>
+              <Text style={styles.feedbackClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -305,6 +379,136 @@ const MultiEventPicker: React.FC<MultiEventPickerProps> = ({
   );
 };
 
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  monthHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2563EB',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  monthName: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
+    letterSpacing: -0.3,
+  },
+  monthYear: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  countBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  weekRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  weekDay: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+    letterSpacing: 0.3,
+  },
+  row: {
+    flexDirection: 'row',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+
+  feedbackOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+    backgroundColor: 'transparent',
+  },
+  feedbackCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  feedbackCardSuccess: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  feedbackCardError: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  feedbackTextWrap: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  feedbackTitle: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    marginBottom: 2,
+    textTransform: 'uppercase',
+  },
+  feedbackTitleSuccess: {
+    color: '#047857',
+  },
+  feedbackTitleError: {
+    color: '#B91C1C',
+  },
+  feedbackMessage: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  feedbackClose: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#6B7280',
+    paddingLeft: 6,
+    paddingVertical: 2,
+  },
+});
+
 const mpStyles = StyleSheet.create({
   overlay: {
     flex: 1,
@@ -382,76 +586,6 @@ const mpStyles = StyleSheet.create({
   emptyText: {
     fontSize: 13,
     color: '#6B7280',
-  },
-});
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    overflow: 'hidden',
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  monthHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderLeftWidth: 4,
-    borderLeftColor: '#2563EB',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  monthName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#111827',
-    letterSpacing: -0.3,
-  },
-  monthYear: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    fontWeight: '500',
-    marginTop: 1,
-  },
-  countBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#2563EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  countText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  weekRow: {
-    flexDirection: 'row',
-    backgroundColor: '#F3F4F6',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-  },
-  weekDay: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#6B7280',
-    letterSpacing: 0.3,
-  },
-  row: {
-    flexDirection: 'row',
-    paddingHorizontal: 4,
-    paddingVertical: 2,
   },
 });
 

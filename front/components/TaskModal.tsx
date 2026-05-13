@@ -29,6 +29,7 @@ interface TaskModalProps {
   onClose: () => void;
   onSaved: () => void;
   onDeleted: () => void;
+  onFeedback?: (message: string, variant?: 'success' | 'error') => void;
 }
 
 const MONTHS_ES = [
@@ -68,6 +69,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
   onClose,
   onSaved,
   onDeleted,
+  onFeedback,
 }) => {
   const [tipo, setTipo] = useState('');
   const [departamento, setDepartamento] = useState('');
@@ -176,9 +178,12 @@ const TaskModal: React.FC<TaskModalProps> = ({
       onSaved();
     } catch (err) {
       console.error('Error guardando actividad:', err);
-      Alert.alert(
-        'Error',
-        err instanceof Error ? err.message : 'No se pudo guardar la actividad.',
+
+      onFeedback?.(
+        existingEvent
+          ? 'Error al actualizar actividad. Intenta nuevamente.'
+          : 'Error al crear actividad. Intenta nuevamente.',
+        'error',
       );
     } finally {
       setLoading(false);
@@ -201,7 +206,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
     } catch (err) {
       console.error('Error eliminando actividad:', err);
       setDeleteConfirmVisible(false);
-      Alert.alert('Error', 'No se pudo eliminar la actividad.');
+      onFeedback?.('Error al eliminar actividad. Intenta nuevamente.', 'error');
     } finally {
       setLoading(false);
     }
