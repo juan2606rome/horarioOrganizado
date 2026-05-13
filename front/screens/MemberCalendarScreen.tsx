@@ -1,4 +1,3 @@
-// MemberCalendarScreen.tsx
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -6,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import MonthCalendar from '../components/MonthCalendar';
@@ -18,12 +18,18 @@ interface MemberCalendarScreenProps {
 }
 
 const YEAR = 2026;
+const MONTHS_ES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
+
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 
 const MemberCalendarScreen: React.FC<MemberCalendarScreenProps> = ({ member }) => {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
 
   const loadEvents = useCallback(async () => {
     try {
@@ -49,6 +55,8 @@ const MemberCalendarScreen: React.FC<MemberCalendarScreenProps> = ({ member }) =
     setRefreshing(true);
     loadEvents();
   };
+
+  const monthsToRender = selectedMonth !== null ? [selectedMonth] : MONTHS;
 
   const totalEvents = events.length;
   const typeBreakdown = EVENT_TYPES.map((et) => ({
@@ -105,6 +113,34 @@ const MemberCalendarScreen: React.FC<MemberCalendarScreenProps> = ({ member }) =
         </View>
       </View>
 
+      <View style={styles.filterSection}>
+        <Text style={styles.filterTitle}>Filtrar por mes:</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.monthScroll}>
+          <TouchableOpacity
+            style={[styles.monthChip, selectedMonth === null && styles.monthChipActive]}
+            onPress={() => setSelectedMonth(null)}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.monthChipText, selectedMonth === null && styles.monthChipTextActive]}>
+              Todos
+            </Text>
+          </TouchableOpacity>
+
+          {MONTHS.map((m) => (
+            <TouchableOpacity
+              key={m}
+              style={[styles.monthChip, selectedMonth === m && styles.monthChipActive]}
+              onPress={() => setSelectedMonth(selectedMonth === m ? null : m)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.monthChipText, selectedMonth === m && styles.monthChipTextActive]}>
+                {MONTHS_ES[m - 1].slice(0, 3)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
       <View style={styles.legend}>
         <Text style={styles.legendTitle}>Leyenda de tipos:</Text>
         <View style={styles.legendItems}>
@@ -117,7 +153,7 @@ const MemberCalendarScreen: React.FC<MemberCalendarScreenProps> = ({ member }) =
         </View>
       </View>
 
-      {MONTHS.map((month) => (
+      {monthsToRender.map((month) => (
         <MonthCalendar
           key={month}
           year={YEAR}
@@ -220,6 +256,46 @@ const styles = StyleSheet.create({
   typePillText: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  filterSection: {
+    backgroundColor: '#FFF',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  filterTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+    textTransform: 'uppercase',
+  },
+  monthScroll: {
+    flexDirection: 'row',
+  },
+  monthChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    marginRight: 6,
+  },
+  monthChipActive: {
+    backgroundColor: '#2563EB',
+  },
+  monthChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  monthChipTextActive: {
+    color: '#FFF',
   },
   legend: {
     backgroundColor: '#FFF',
