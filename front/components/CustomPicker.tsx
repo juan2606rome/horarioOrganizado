@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   FlatList,
   StyleSheet,
   TextInput,
+  Pressable,
 } from 'react-native';
 
 interface PickerOption {
@@ -23,6 +24,13 @@ interface CustomPickerProps {
   searchable?: boolean;
 }
 
+const normalizeText = (text: string) =>
+  text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
 const CustomPicker: React.FC<CustomPickerProps> = ({
   label,
   value,
@@ -36,11 +44,18 @@ const CustomPicker: React.FC<CustomPickerProps> = ({
 
   const selected = options.find((o) => o.value === value);
 
-  const filtered = searchable
-    ? options.filter((o) =>
-        o.label.toLowerCase().includes(search.toLowerCase()),
-      )
-    : options;
+  const filtered = useMemo(() => {
+    if (!searchable) return options;
+
+    const q = normalizeText(search);
+    if (!q) return options;
+
+    return options.filter((o) => {
+      const labelMatch = normalizeText(o.label).includes(q);
+      const valueMatch = normalizeText(o.value).includes(q);
+      return labelMatch || valueMatch;
+    });
+  }, [options, search, searchable]);
 
   return (
     <View style={styles.wrapper}>
@@ -65,11 +80,12 @@ const CustomPicker: React.FC<CustomPickerProps> = ({
         animationType="fade"
         onRequestClose={() => setVisible(false)}
       >
-        <TouchableOpacity
-          style={styles.overlay}
-          activeOpacity={1}
-          onPress={() => setVisible(false)}
-        >
+        <View style={styles.overlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setVisible(false)}
+          />
+
           <View style={styles.sheet}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>{label}</Text>
@@ -120,7 +136,7 @@ const CustomPicker: React.FC<CustomPickerProps> = ({
               )}
             />
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
     </View>
   );
