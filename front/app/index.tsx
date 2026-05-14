@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -97,7 +97,7 @@ export default function App() {
           </View>
           <View>
             <Text style={styles.appTitle}>Calendario Equipo</Text>
-            <Text style={styles.appSubtitle}>Social · 2026</Text>
+            <Text style={styles.appSubtitle}>Social · 2026 · Creado por: Alejandra Alvarado</Text>
           </View>
         </View>
 
