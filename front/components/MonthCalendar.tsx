@@ -224,16 +224,17 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
         member={member}
         existingEvent={selectedEvent}
         onClose={() => {
-          setModalVisible(false);
-          setSelectedEvent(null);
-        }}
-        onSaved={() => {
-          const isEdit = !!selectedEvent;
-          setModalVisible(false);
-          setSelectedEvent(null);
-          onEventsChanged();
-
           setTimeout(() => {
+            setModalVisible(false);
+            setSelectedEvent(null);
+          }, 180);
+        }}
+        onSaved={(isEdit) => {
+          setTimeout(() => {
+            setModalVisible(false);
+            setSelectedEvent(null);
+            onEventsChanged();
+
             showFeedback(
               isEdit
                 ? 'Actividad actualizada correctamente.'
@@ -243,12 +244,15 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
           }, 180);
         }}
         onDeleted={() => {
-          setModalVisible(false);
-          setSelectedEvent(null);
-          onEventsChanged();
-
           setTimeout(() => {
-            showFeedback('Actividad eliminada correctamente.', 'success');
+            setModalVisible(false);
+            setSelectedEvent(null);
+            onEventsChanged();
+
+            showFeedback(
+              'Actividad eliminada correctamente.',
+              'success',
+            );
           }, 180);
         }}
         onFeedback={(message, variant = 'error') => {
