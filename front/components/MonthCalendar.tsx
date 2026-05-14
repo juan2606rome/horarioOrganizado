@@ -227,7 +227,7 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
           setTimeout(() => {
             setModalVisible(false);
             setSelectedEvent(null);
-          }, 180);
+          }, 250);
         }}
         onSaved={(isEdit) => {
           setTimeout(() => {
@@ -241,7 +241,7 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
                 : 'Actividad guardada correctamente.',
               'success',
             );
-          }, 180);
+          }, 250);
         }}
         onDeleted={() => {
           setTimeout(() => {
@@ -253,7 +253,7 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
               'Actividad eliminada correctamente.',
               'success',
             );
-          }, 180);
+          }, 250);
         }}
         onFeedback={(message, variant = 'error') => {
           showFeedback(message, variant);
