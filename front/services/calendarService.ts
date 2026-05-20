@@ -1,7 +1,6 @@
 // services/calendarService.ts
 import { CalendarEvent, TeamMember } from '../types';
 
-
 // 🔥 TU MICROSERVICIO DE RENDER
 const BASE_URL = 'https://horarioorganizado.onrender.com';
 
@@ -13,7 +12,7 @@ async function request<T>(
     headers: {
       'Content-Type': 'application/json',
       ...(options?.headers || {}),
-    }, 
+    },
     ...options,
   });
 
@@ -29,7 +28,7 @@ async function request<T>(
     const message =
       typeof payload === 'string'
         ? payload
-        : payload?.error || 'Error inesperado';
+        : (payload as any)?.error || 'Error inesperado';
 
     throw new Error(message);
   }
@@ -38,17 +37,50 @@ async function request<T>(
 }
 
 // 🔥 GENERADOR SIMPLE DE IDS para la base de datos
-
 const generateId = () => {
   return `event_${Date.now()}_${Math.random()
     .toString(36)
     .slice(2, 9)}`;
 };
 
+const generateMemberId = () => {
+  return `member_${Date.now()}_${Math.random()
+    .toString(36)
+    .slice(2, 9)}`;
+};
+
+type MemberPayload = {
+  name: string;
+  color: string;
+  initials: string;
+  sortOrder: number;
+  active: boolean;
+};
+
 export const CalendarService = {
   // ─── MEMBERS ───────────────────────────
   getMembers: () =>
     request<TeamMember[]>('/members'),
+
+  createMember: (data: MemberPayload) =>
+    request<TeamMember>('/members', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: generateMemberId(),
+        ...data,
+      }),
+    }),
+
+  updateMember: (id: string, data: MemberPayload) =>
+    request<TeamMember>(`/members/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  deleteMember: (id: string) =>
+    request<{ ok: true }>(`/members/${id}`, {
+      method: 'DELETE',
+    }),
 
   // ─── EVENTS ────────────────────────────
   getEvents: (params?: {
@@ -95,11 +127,8 @@ export const CalendarService = {
   ) =>
     request<CalendarEvent>('/events', {
       method: 'POST',
-
       body: JSON.stringify({
         ...data,
-
-        // 🔥 EL BACKEND AHORA EXIGE ID
         id: generateId(),
       }),
     }),

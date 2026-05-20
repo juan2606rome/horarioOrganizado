@@ -27,7 +27,7 @@ interface TaskModalProps {
   member: TeamMember | null;
   existingEvent?: CalendarEvent | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (isEdit: boolean) => void;
   onDeleted: () => void;
   onFeedback?: (message: string, variant?: 'success' | 'error') => void;
 }
@@ -175,7 +175,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
         });
       }
 
-      onSaved();
+      onSaved(!!existingEvent);
     } catch (err) {
       console.error('Error guardando actividad:', err);
 

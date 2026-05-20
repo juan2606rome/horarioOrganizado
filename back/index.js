@@ -1,6 +1,7 @@
 const http = require('http');
 const url = require('url');
 const { Client } = require('pg');
+const { randomUUID } = require('crypto');
 
 const isProduction = process.env.NODE_ENV === 'production';
 const PORT = process.env.PORT || 3000;
@@ -249,6 +250,160 @@ async function getMembers() {
   return result.rows.map(mapMember);
 }
 
+async function createMember(payload) {
+  const {
+    id,
+    name,
+    color = '#2563EB',
+    initials = '',
+    sortOrder = 999,
+    active = true,
+  } = payload || {};
+
+  if (!name || !String(name).trim()) {
+    throw new Error('name es obligatorio');
+  }
+
+  const newId = id || `member_${randomUUID()}`;
+
+  const exists = await client.query(
+    `SELECT id FROM team_members WHERE id = $1`,
+    [newId]
+  );
+
+  if (exists.rows[0]) {
+    throw new Error('Ya existe un integrante con ese id');
+  }
+
+  await client.query(
+    `
+    INSERT INTO team_members (
+      id,
+      name,
+      color,
+      initials,
+      sort_order,
+      active
+    )
+    VALUES ($1, $2, $3, $4, $5, $6)
+    `,
+    [
+      newId,
+      String(name).trim(),
+      color,
+      String(initials || '').trim().toUpperCase(),
+      Number(sortOrder) || 999,
+      Boolean(active),
+    ]
+  );
+
+  const created = await client.query(
+    `
+    SELECT
+      id,
+      name,
+      color,
+      initials,
+      sort_order,
+      active,
+      created_at
+    FROM team_members
+    WHERE id = $1
+    `,
+    [newId]
+  );
+
+  return created.rows[0] ? mapMember(created.rows[0]) : null;
+}
+
+async function updateMember(id, payload) {
+  const current = await client.query(
+    `SELECT * FROM team_members WHERE id = $1`,
+    [id]
+  );
+
+  if (!current.rows[0]) {
+    throw new Error('Integrante no encontrado');
+  }
+
+  const old = current.rows[0];
+
+  const name =
+    payload.name !== undefined ? String(payload.name).trim() : old.name;
+
+  if (!name) {
+    throw new Error('name es obligatorio');
+  }
+
+  const color = payload.color !== undefined ? payload.color : old.color;
+  const initials =
+    payload.initials !== undefined
+      ? String(payload.initials).trim().toUpperCase()
+      : old.initials;
+  const sortOrder =
+    payload.sortOrder !== undefined ? Number(payload.sortOrder) || 999 : old.sort_order;
+  const active =
+    payload.active !== undefined ? Boolean(payload.active) : old.active;
+
+  await client.query(
+    `
+    UPDATE team_members
+    SET
+      name = $2,
+      color = $3,
+      initials = $4,
+      sort_order = $5,
+      active = $6
+    WHERE id = $1
+    `,
+    [id, name, color, initials, sortOrder, active]
+  );
+
+  const updated = await client.query(
+    `
+    SELECT
+      id,
+      name,
+      color,
+      initials,
+      sort_order,
+      active,
+      created_at
+    FROM team_members
+    WHERE id = $1
+    `,
+    [id]
+  );
+
+  return updated.rows[0] ? mapMember(updated.rows[0]) : null;
+}
+
+async function deleteMember(id) {
+  await client.query('BEGIN');
+
+  try {
+    await client.query(
+      `DELETE FROM calendar_events WHERE member_id = $1`,
+      [id]
+    );
+
+    const deleted = await client.query(
+      `DELETE FROM team_members WHERE id = $1 RETURNING id`,
+      [id]
+    );
+
+    if (!deleted.rowCount) {
+      throw new Error('Integrante no encontrado');
+    }
+
+    await client.query('COMMIT');
+    return true;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  }
+}
+
 // ─────────────────────────────────────────────
 // CREATE EVENT
 // ─────────────────────────────────────────────
@@ -270,7 +425,6 @@ async function createEvent(payload) {
   }
   if (!tipo) throw new Error('tipo es obligatorio');
 
-  // valida que el miembro exista antes del INSERT
   const memberCheck = await client.query(
     `SELECT id FROM team_members WHERE id = $1`,
     [memberId]
@@ -440,6 +594,35 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, members);
     }
 
+    if (path === '/members' && req.method === 'POST') {
+      const body = await readBody(req);
+      const created = await createMember(body);
+      return sendJSON(res, 201, created);
+    }
+
+    if (path.startsWith('/members/') && (req.method === 'PUT' || req.method === 'PATCH')) {
+      const id = path.split('/').filter(Boolean)[1];
+
+      if (!id) {
+        return sendJSON(res, 400, { error: 'ID inválido' });
+      }
+
+      const body = await readBody(req);
+      const updated = await updateMember(id, body);
+      return sendJSON(res, 200, updated);
+    }
+
+    if (path.startsWith('/members/') && req.method === 'DELETE') {
+      const id = path.split('/').filter(Boolean)[1];
+
+      if (!id) {
+        return sendJSON(res, 400, { error: 'ID inválido' });
+      }
+
+      const deleted = await deleteMember(id);
+      return sendJSON(res, 200, { ok: deleted });
+    }
+
     // GET EVENTS
     if (path === '/events' && req.method === 'GET') {
       const { memberId, year, month, id } = query;
@@ -523,6 +706,37 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, { ok: true });
     }
 
+    // COMBINED
+    if (path === '/combined' && req.method === 'GET') {
+      const { year, month, memberId } = query;
+
+      if (!year || !month) {
+        return sendJSON(res, 400, {
+          error: 'year y month son obligatorios',
+        });
+      }
+
+      if (!isValidYear(year)) {
+        return sendJSON(res, 400, {
+          error: 'year inválido',
+        });
+      }
+
+      if (!isValidMonth(month)) {
+        return sendJSON(res, 400, {
+          error: 'month debe estar entre 1 y 12',
+        });
+      }
+
+      const events = await getEvents({
+        year,
+        month,
+        memberId,
+      });
+
+      return sendJSON(res, 200, events);
+    }
+
     // DOCS
     if (path === '/docs' && req.method === 'GET') {
       return sendText(
@@ -532,11 +746,15 @@ const server = http.createServer(async (req, res) => {
           <h1>Calendario DIH API</h1>
           <ul>
             <li>GET /members</li>
+            <li>POST /members</li>
+            <li>PATCH /members/:id</li>
+            <li>DELETE /members/:id</li>
             <li>GET /events</li>
             <li>GET /events/:id</li>
             <li>POST /events</li>
             <li>PUT /events/:id</li>
             <li>DELETE /events/:id</li>
+            <li>GET /combined?year=YYYY&month=MM</li>
           </ul>
         `
       );

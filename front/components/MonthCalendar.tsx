@@ -249,10 +249,7 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({
             setSelectedEvent(null);
             onEventsChanged();
 
-            showFeedback(
-              'Actividad eliminada correctamente.',
-              'success',
-            );
+            showFeedback('Actividad eliminada correctamente.', 'success');
           }, 250);
         }}
         onFeedback={(message, variant = 'error') => {
