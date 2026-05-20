@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { getEventType } from '../data/eventTypes';
+import { getHoliday, isHoliday } from '../data/holidays';
 import { CalendarService } from '../services/calendarService';
 import { CalendarEvent, TeamMember } from '../types';
 
@@ -138,7 +139,9 @@ const CombinedScreen: React.FC<CombinedScreenProps> = ({ members }) => {
 
   const openDayModal = (date: string) => {
     const dayEvents = getEventsForDate(date);
-    if (dayEvents.length === 0) return;
+
+    if (dayEvents.length === 0 && !isHoliday(date)) return;
+
     setSelectedDate(date);
     setSelectedDayEvents(dayEvents);
     setDayModalVisible(true);
@@ -292,6 +295,7 @@ const CombinedScreen: React.FC<CombinedScreenProps> = ({ members }) => {
 
                     const dayEvts = getEventsForDate(cell.date);
                     const isToday = cell.date === todayStr;
+                    const holiday = getHoliday(cell.date);
 
                     return (
                       <TouchableOpacity
@@ -300,13 +304,37 @@ const CombinedScreen: React.FC<CombinedScreenProps> = ({ members }) => {
                           styles.dayCell,
                           isToday && styles.todayCell,
                           dayEvts.length > 0 && styles.hasEventsCell,
+                          holiday && styles.holidayCell,
                         ]}
                         activeOpacity={0.75}
                         onPress={() => openDayModal(cell.date!)}
                       >
-                        <Text style={[styles.cellDay, isToday && styles.todayDayText]}>
-                          {cell.day}
-                        </Text>
+                        <View style={styles.dayHeader}>
+                          <Text
+                            style={[
+                              styles.cellDay,
+                              isToday && styles.todayDayText,
+                              holiday && styles.holidayDayText,
+                            ]}
+                          >
+                            {cell.day}
+                          </Text>
+
+                          {holiday && (
+                            <Text style={styles.holidayEmoji}>🎉</Text>
+                          )}
+                        </View>
+
+                        {holiday && (
+                          <View style={styles.holidayBadge}>
+                            <Text
+                              style={styles.holidayBadgeText}
+                              numberOfLines={2}
+                            >
+                              {holiday.name}
+                            </Text>
+                          </View>
+                        )}
 
                         <View style={styles.eventStack}>
                           {dayEvts.slice(0, 3).map((ev) => {
@@ -376,6 +404,15 @@ const CombinedScreen: React.FC<CombinedScreenProps> = ({ members }) => {
                 <Text style={styles.modalClose}>✕</Text>
               </TouchableOpacity>
             </View>
+
+            {selectedDate && isHoliday(selectedDate) && (
+              <View style={styles.modalHolidayBox}>
+                <Text style={styles.modalHolidayTitle}>🎉 Día festivo</Text>
+                <Text style={styles.modalHolidayText}>
+                  {getHoliday(selectedDate)?.name}
+                </Text>
+              </View>
+            )}
 
             <ScrollView showsVerticalScrollIndicator={false}>
               {selectedDayEvents.map((ev) => {
@@ -655,8 +692,17 @@ const styles = StyleSheet.create({
     borderColor: '#2563EB',
     backgroundColor: '#EFF6FF',
   },
+  holidayCell: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+  },
   hasEventsCell: {
     backgroundColor: '#FFFFFF',
+  },
+  dayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   cellDay: {
     fontSize: 12,
@@ -667,6 +713,26 @@ const styles = StyleSheet.create({
   todayDayText: {
     color: '#2563EB',
     fontWeight: '900',
+  },
+  holidayDayText: {
+    color: '#B45309',
+    fontWeight: '900',
+  },
+  holidayEmoji: {
+    fontSize: 12,
+  },
+  holidayBadge: {
+    marginTop: 4,
+    backgroundColor: '#FDE68A',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  holidayBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#92400E',
+    textAlign: 'center',
   },
   eventStack: {
     marginTop: 6,
@@ -739,6 +805,27 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontWeight: '700',
   },
+
+  modalHolidayBox: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+  },
+  modalHolidayTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#92400E',
+    marginBottom: 2,
+  },
+  modalHolidayText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#78350F',
+  },
+
   modalItem: {
     borderWidth: 1,
     borderColor: '#E5E7EB',
