@@ -9,9 +9,10 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 
+import AdminScreen from '../screens/Admin';
 import CombinedScreen from '../screens/CombinedScreen';
 import MemberCalendarScreen from '../screens/MemberCalendarScreen';
 import { CalendarService } from '../services/calendarService';
@@ -29,8 +30,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>('combined');
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
+  const [adminVisible, setAdminVisible] = useState(false);
+  const [secretTapCount, setSecretTapCount] = useState(0);
 
   const tabScrollRef = useRef<ScrollView>(null);
+  const secretTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -54,6 +58,9 @@ export default function App() {
 
     return () => {
       mounted = false;
+      if (secretTimerRef.current) {
+        clearTimeout(secretTimerRef.current);
+      }
     };
   }, []);
 
@@ -86,6 +93,36 @@ export default function App() {
     });
   };
 
+  const reloadMembers = async () => {
+    try {
+      const data = await CalendarService.getMembers();
+      setMembers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Error recargando miembros:', err);
+    }
+  };
+
+  const handleSecretPress = () => {
+    setSecretTapCount((prev) => {
+      const next = prev + 1;
+
+      if (secretTimerRef.current) {
+        clearTimeout(secretTimerRef.current);
+      }
+
+      secretTimerRef.current = setTimeout(() => {
+        setSecretTapCount(0);
+      }, 1200);
+
+      if (next >= 5) {
+        setAdminVisible(true);
+        return 0;
+      }
+
+      return next;
+    });
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#1E3A8A" />
@@ -97,7 +134,18 @@ export default function App() {
           </View>
           <View>
             <Text style={styles.appTitle}>Calendario Equipo</Text>
-            <Text style={styles.appSubtitle}>Social · 2026 · Creado por: Alejandra Alvarado</Text>
+            <Text style={styles.appSubtitle}>
+              Social ·{' '}
+              <Text
+                onPress={handleSecretPress}
+                suppressHighlighting
+                style={styles.secretYear}
+                selectable={false}
+              >
+                2026
+              </Text>{' '}
+              · Creado por: Alejandra Alvarado
+            </Text>
           </View>
         </View>
 
@@ -194,6 +242,12 @@ export default function App() {
           </View>
         )}
       </View>
+
+      <AdminScreen
+        visible={adminVisible}
+        onClose={() => setAdminVisible(false)}
+        onChanged={reloadMembers}
+      />
     </SafeAreaView>
   );
 }
@@ -240,6 +294,12 @@ const styles = StyleSheet.create({
     color: '#93C5FD',
     fontWeight: '500',
     marginTop: 1,
+  },
+  secretYear: {
+    color: '#93C5FD',
+    fontSize: 12,
+    fontWeight: '500',
+    cursor: 'default',
   },
   activeMemberBadge: {
     width: 40,
