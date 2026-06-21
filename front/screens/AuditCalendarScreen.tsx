@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
+    FlatList,
     Modal,
     RefreshControl,
     ScrollView,
@@ -29,6 +30,12 @@ const AUDIT_TYPES: { label: string; value: AuditType }[] = [
   { label: 'AV3', value: 'AV3' },
 ];
 
+const AV_COLORS: Record<AuditType, { color: string; bg: string; text: string }> = {
+  AV1: { color: '#D97706', bg: '#FEF3C7', text: '#92400E' },
+  AV2: { color: '#2563EB', bg: '#DBEAFE', text: '#1E3A8A' },
+  AV3: { color: '#7C3AED', bg: '#EDE9FE', text: '#4C1D95' },
+};
+
 const getDaysInMonth = (year: number, month: number) =>
   new Date(year, month, 0).getDate();
 
@@ -40,11 +47,10 @@ const getFirstDayOfMonth = (year: number, month: number) => {
 const formatDate = (year: number, month: number, day: number) =>
   `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-const today = new Date();
 const todayStr = formatDate(
-  today.getFullYear(),
-  today.getMonth() + 1,
-  today.getDate(),
+  new Date().getFullYear(),
+  new Date().getMonth() + 1,
+  new Date().getDate(),
 );
 
 interface Props {
@@ -55,7 +61,7 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
+  const [selectedMonths, setSelectedMonths] = useState<number[]>([]);
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dayEvents, setDayEvents] = useState<AuditEvent[]>([]);
@@ -91,15 +97,50 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
     loadEvents();
   };
 
-  const monthOptions = useMemo(
+  const memberOptions = useMemo(
     () => members.map((m) => ({ label: m.name, value: m.id })),
-    [members]
+    [members],
   );
 
   const memberById = useCallback(
     (id: string) => members.find((m) => m.id === id),
-    [members]
+    [members],
   );
+
+  const toggleMonth = (m: number) => {
+    setSelectedMonths((prev) =>
+      prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m],
+    );
+  };
+
+  const filteredEvents = useMemo(() => {
+    if (selectedMonths.length === 0) return events;
+    return events.filter((e) => {
+      const [, mo] = e.date.split('-').map(Number);
+      return selectedMonths.includes(mo);
+    });
+  }, [events, selectedMonths]);
+
+  const stats = useMemo(() => {
+    const base = {
+      AV1: { total: 0, cumplidos: 0, noCumplidos: 0 },
+      AV2: { total: 0, cumplidos: 0, noCumplidos: 0 },
+      AV3: { total: 0, cumplidos: 0, noCumplidos: 0 },
+    };
+    for (const ev of filteredEvents) {
+      const t = ev.tipo as AuditType;
+      if (!base[t]) continue;
+      base[t].total++;
+      if (ev.cumplido) base[t].cumplidos++;
+      else base[t].noCumplidos++;
+    }
+    return base;
+  }, [filteredEvents]);
+
+  const monthsToRender =
+    selectedMonths.length > 0
+      ? [...selectedMonths].sort((a, b) => a - b)
+      : Array.from({ length: 12 }, (_, i) => i + 1);
 
   const openCreate = (date: string) => {
     setSelectedDate(date);
@@ -125,34 +166,23 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
     const evs = events.filter((e) => e.date === date);
     setSelectedDate(date);
     setDayEvents(evs);
-
     if (evs.length === 0) {
       openCreate(date);
       return;
     }
-
     setDayModalVisible(true);
   };
 
   const save = async () => {
     if (!selectedDate || !memberId || !tipo) return;
-
     setSaving(true);
     try {
-      const payload = {
-        memberId,
-        date: selectedDate,
-        tipo,
-        cumplido,
-        detalle,
-      };
-
+      const payload = { memberId, date: selectedDate, tipo, cumplido, detalle };
       if (editingEvent) {
         await AuditService.updateAuditEvent(editingEvent.id, payload);
       } else {
         await AuditService.createAuditEvent(payload);
       }
-
       setFormVisible(false);
       setEditingEvent(null);
       await loadEvents();
@@ -173,29 +203,6 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
     }
   };
 
-  const monthsToRender =
-    selectedMonth !== null
-      ? [selectedMonth]
-      : Array.from({ length: 12 }, (_, i) => i + 1);
-
-  const totals = useMemo(() => {
-    const base = {
-      AV1: 0,
-      AV2: 0,
-      AV3: 0,
-      cumplidos: 0,
-      noCumplidos: 0,
-    };
-
-    for (const ev of events) {
-      base[ev.tipo]++;
-      if (ev.cumplido) base.cumplidos++;
-      else base.noCumplidos++;
-    }
-
-    return base;
-  }, [events]);
-
   if (loading) {
     return (
       <View style={styles.loading}>
@@ -205,62 +212,114 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
     );
   }
 
+  const statsLabel =
+    selectedMonths.length === 0
+      ? 'Todo el año 2026'
+      : selectedMonths.length === 1
+      ? MONTHS_ES[selectedMonths[0] - 1]
+      : `${selectedMonths.length} meses seleccionados`;
+
   return (
     <>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#2563EB']}
+            tintColor="#2563EB"
+          />
         }
       >
-        <View style={styles.statsBar}>
-          <Stat label="AV1" value={totals.AV1} />
-          <Stat label="AV2" value={totals.AV2} />
-          <Stat label="AV3" value={totals.AV3} />
-          <Stat label="Cumplidas" value={totals.cumplidos} />
-          <Stat label="No cumplidas" value={totals.noCumplidos} />
-        </View>
-
+        {/* FILTRO MES */}
         <View style={styles.filterSection}>
-          <Text style={styles.filterTitle}>Filtrar por mes</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <Text style={styles.filterTitle}>Filtrar por mes:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.monthScroll}>
             <TouchableOpacity
-              style={[styles.monthChip, selectedMonth === null && styles.monthChipActive]}
-              onPress={() => setSelectedMonth(null)}
+              style={[styles.monthChip, selectedMonths.length === 0 && styles.monthChipActive]}
+              onPress={() => setSelectedMonths([])}
+              activeOpacity={0.8}
             >
-              <Text style={[styles.monthChipText, selectedMonth === null && styles.monthChipTextActive]}>
+              <Text style={[styles.monthChipText, selectedMonths.length === 0 && styles.monthChipTextActive]}>
                 Todos
               </Text>
             </TouchableOpacity>
 
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-              <TouchableOpacity
-                key={m}
-                style={[styles.monthChip, selectedMonth === m && styles.monthChipActive]}
-                onPress={() => setSelectedMonth(selectedMonth === m ? null : m)}
-              >
-                <Text style={[styles.monthChipText, selectedMonth === m && styles.monthChipTextActive]}>
-                  {MONTHS_ES[m - 1].slice(0, 3)}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
+              const active = selectedMonths.includes(m);
+              return (
+                <TouchableOpacity
+                  key={m}
+                  style={[styles.monthChip, active && styles.monthChipActive]}
+                  onPress={() => toggleMonth(m)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.monthChipText, active && styles.monthChipTextActive]}>
+                    {MONTHS_ES[m - 1].slice(0, 3)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         </View>
 
+        {/* ESTADÍSTICAS */}
+        <View style={styles.statsCard}>
+          <Text style={styles.statsTitle}>Estadísticas · {statsLabel}</Text>
+
+          {(['AV1', 'AV2', 'AV3'] as AuditType[]).map((tipo) => {
+            const s = stats[tipo];
+            const c = AV_COLORS[tipo];
+            return (
+              <View key={tipo} style={[styles.statRow, { borderLeftColor: c.color }]}>
+                <View style={[styles.statTypeBadge, { backgroundColor: c.bg }]}>
+                  <Text style={[styles.statTypeText, { color: c.text }]}>{tipo}</Text>
+                </View>
+
+                <View style={styles.statCols}>
+                  <View style={styles.statCol}>
+                    <Text style={[styles.statNumber, { color: c.color }]}>{s.total}</Text>
+                    <Text style={styles.statLabel}>Total</Text>
+                  </View>
+
+                  <View style={styles.statDivider} />
+
+                  <View style={styles.statCol}>
+                    <Text style={[styles.statNumber, { color: '#059669' }]}>{s.cumplidos}</Text>
+                    <Text style={styles.statLabel}>Cumplidas</Text>
+                  </View>
+
+                  <View style={styles.statDivider} />
+
+                  <View style={styles.statCol}>
+                    <Text style={[styles.statNumber, { color: '#DC2626' }]}>{s.noCumplidos}</Text>
+                    <Text style={styles.statLabel}>No cumplidas</Text>
+                  </View>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* CALENDARIOS */}
         {monthsToRender.map((month) => {
           const daysInMonth = getDaysInMonth(YEAR, month);
           const firstDayOffset = getFirstDayOfMonth(YEAR, month);
 
-          const monthEvents = events.filter((e) => {
+          const monthEvs = events.filter((e) => {
             const [, m] = e.date.split('-').map(Number);
             return m === month;
           });
 
-          const monthCounts = {
-            AV1: monthEvents.filter((e) => e.tipo === 'AV1').length,
-            AV2: monthEvents.filter((e) => e.tipo === 'AV2').length,
-            AV3: monthEvents.filter((e) => e.tipo === 'AV3').length,
+          const monthStats = {
+            AV1: monthEvs.filter((e) => e.tipo === 'AV1').length,
+            AV2: monthEvs.filter((e) => e.tipo === 'AV2').length,
+            AV3: monthEvs.filter((e) => e.tipo === 'AV3').length,
+            cumplidos: monthEvs.filter((e) => e.cumplido).length,
+            noCumplidos: monthEvs.filter((e) => !e.cumplido).length,
           };
 
           const cells: Array<{ day: number | null; date: string | null }> = [];
@@ -271,17 +330,31 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
           while (cells.length % 7 !== 0) cells.push({ day: null, date: null });
 
           return (
-            <View key={month} style={styles.monthCard}>
+            <View key={month} style={styles.monthBlock}>
               <View style={styles.monthHeader}>
                 <View>
-                  <Text style={styles.monthTitle}>{MONTHS_ES[month - 1]}</Text>
-                  <Text style={styles.monthSub}>{YEAR}</Text>
+                  <Text style={styles.monthName}>{MONTHS_ES[month - 1]} {YEAR}</Text>
                 </View>
-
-                <View style={styles.monthBadges}>
-                  <MiniBadge text={`AV1 ${monthCounts.AV1}`} />
-                  <MiniBadge text={`AV2 ${monthCounts.AV2}`} />
-                  <MiniBadge text={`AV3 ${monthCounts.AV3}`} />
+                <View style={styles.monthBadgesRow}>
+                  {(['AV1', 'AV2', 'AV3'] as AuditType[]).map((t) => (
+                    monthStats[t] > 0 ? (
+                      <View key={t} style={[styles.monthMiniBadge, { backgroundColor: AV_COLORS[t].bg }]}>
+                        <Text style={[styles.monthMiniBadgeText, { color: AV_COLORS[t].text }]}>
+                          {t} {monthStats[t]}
+                        </Text>
+                      </View>
+                    ) : null
+                  ))}
+                  {monthStats.cumplidos > 0 && (
+                    <View style={styles.monthMiniBadgeGreen}>
+                      <Text style={styles.monthMiniBadgeGreenText}>✓ {monthStats.cumplidos}</Text>
+                    </View>
+                  )}
+                  {monthStats.noCumplidos > 0 && (
+                    <View style={styles.monthMiniBadgeRed}>
+                      <Text style={styles.monthMiniBadgeRedText}>✗ {monthStats.noCumplidos}</Text>
+                    </View>
+                  )}
                 </View>
               </View>
 
@@ -292,44 +365,55 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
               </View>
 
               {Array.from({ length: cells.length / 7 }).map((_, rowIdx) => (
-                <View key={rowIdx} style={styles.row}>
+                <View key={rowIdx} style={styles.gridRow}>
                   {cells.slice(rowIdx * 7, rowIdx * 7 + 7).map((cell, colIdx) => {
                     if (!cell.day || !cell.date) {
                       return <View key={colIdx} style={styles.emptyCell} />;
                     }
 
-                    const dayEvents = events.filter((e) => e.date === cell.date);
+                    const cellEvents = events.filter((e) => e.date === cell.date);
                     const isToday = cell.date === todayStr;
 
                     return (
                       <TouchableOpacity
                         key={colIdx}
-                        style={[styles.dayCell, isToday && styles.todayCell, dayEvents.length > 0 && styles.dayCellWithEvents]}
+                        style={[
+                          styles.dayCell,
+                          isToday && styles.todayCell,
+                          cellEvents.length > 0 && styles.hasCellEvents,
+                        ]}
                         onPress={() => onDayPress(cell.date!)}
-                        activeOpacity={0.8}
+                        activeOpacity={0.75}
                       >
-                        <Text style={[styles.dayNum, isToday && styles.todayNum]}>{cell.day}</Text>
+                        <Text style={[styles.dayNum, isToday && styles.todayNum]}>
+                          {cell.day}
+                        </Text>
 
-                        {dayEvents.slice(0, 2).map((ev) => {
-                          const m = memberById(ev.memberId);
-                          return (
-                            <View key={ev.id} style={styles.eventPill}>
+                        <View style={styles.eventStack}>
+                          {cellEvents.slice(0, 2).map((ev) => {
+                            const m = memberById(ev.memberId);
+                            const c = AV_COLORS[ev.tipo as AuditType] || AV_COLORS.AV1;
+                            return (
                               <View
-                                style={[
-                                  styles.eventDot,
-                                  { backgroundColor: m?.color || '#2563EB' },
-                                ]}
-                              />
-                              <Text style={styles.eventText} numberOfLines={1}>
-                                {ev.tipo} · {m?.initials || '??'}
-                              </Text>
+                                key={ev.id}
+                                style={[styles.eventChip, { borderLeftColor: c.color }]}
+                              >
+                                <View style={[styles.eventDot, { backgroundColor: m?.color || c.color }]} />
+                                <Text style={styles.eventChipText} numberOfLines={1}>
+                                  {ev.tipo} · {m?.initials || '??'}
+                                </Text>
+                                {ev.cumplido && (
+                                  <Text style={styles.checkIcon}>✓</Text>
+                                )}
+                              </View>
+                            );
+                          })}
+                          {cellEvents.length > 2 && (
+                            <View style={styles.moreChip}>
+                              <Text style={styles.moreChipText}>+{cellEvents.length - 2} más</Text>
                             </View>
-                          );
-                        })}
-
-                        {dayEvents.length > 2 && (
-                          <Text style={styles.moreText}>+{dayEvents.length - 2} más</Text>
-                        )}
+                          )}
+                        </View>
                       </TouchableOpacity>
                     );
                   })}
@@ -342,123 +426,175 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      <Modal visible={dayModalVisible} transparent animationType="fade">
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setDayModalVisible(false)}
-        >
+      {/* MODAL: ACTIVIDADES DEL DÍA */}
+      <Modal visible={dayModalVisible} transparent animationType="fade" onRequestClose={() => setDayModalVisible(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setDayModalVisible(false)}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Auditorías del día</Text>
+              <Text style={styles.modalTitle}>Auditorías · {selectedDate?.split('-')[2]} {selectedDate ? MONTHS_ES[parseInt(selectedDate.split('-')[1], 10) - 1] : ''}</Text>
               <TouchableOpacity onPress={() => setDayModalVisible(false)}>
                 <Text style={styles.modalClose}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <ScrollView>
-              {dayEvents.map((ev) => {
-                const m = memberById(ev.memberId);
+            <FlatList
+              data={dayEvents}
+              keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => {
+                const m = memberById(item.memberId);
+                const c = AV_COLORS[item.tipo as AuditType] || AV_COLORS.AV1;
                 return (
                   <TouchableOpacity
-                    key={ev.id}
-                    style={styles.modalItem}
+                    style={[styles.dayModalItem, { borderLeftColor: c.color }]}
                     onPress={() => {
                       setDayModalVisible(false);
-                      openEdit(ev);
+                      openEdit(item);
                     }}
+                    activeOpacity={0.8}
                   >
-                    <Text style={styles.modalItemType}>{ev.tipo}</Text>
-                    <Text style={styles.modalItemName}>
-                      {m?.name || 'Ingeniero'}
-                    </Text>
-                    <Text style={styles.modalItemDetail}>
-                      {ev.cumplido ? 'Cumplido' : 'No cumplido'}
-                    </Text>
-                    {ev.detalle ? (
-                      <Text style={styles.modalItemDesc}>{ev.detalle}</Text>
+                    <View style={styles.dayModalItemTop}>
+                      <View style={[styles.dayModalBadge, { backgroundColor: c.bg }]}>
+                        <Text style={[styles.dayModalBadgeText, { color: c.text }]}>{item.tipo}</Text>
+                      </View>
+                      <View style={[styles.cumpliBadge, item.cumplido ? styles.cumpliSi : styles.cumpliNo]}>
+                        <Text style={[styles.cumpliText, item.cumplido ? styles.cumpliSiText : styles.cumpliNoText]}>
+                          {item.cumplido ? '✓ Cumplido' : '✗ No cumplido'}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.dayModalMemberRow}>
+                      {m && (
+                        <View style={[styles.memberDot2, { backgroundColor: m.color }]}>
+                          <Text style={styles.memberDot2Text}>{m.initials}</Text>
+                        </View>
+                      )}
+                      <Text style={styles.dayModalMemberName}>{m?.name || 'Ingeniero'}</Text>
+                    </View>
+                    {item.detalle ? (
+                      <Text style={styles.dayModalDetalle} numberOfLines={2}>{item.detalle}</Text>
                     ) : null}
                   </TouchableOpacity>
                 );
-              })}
-
-              <TouchableOpacity
-                style={styles.addBtn}
-                onPress={() => {
-                  setDayModalVisible(false);
-                  if (selectedDate) openCreate(selectedDate);
-                }}
-              >
-                <Text style={styles.addBtnText}>+ Nueva auditoría</Text>
-              </TouchableOpacity>
-            </ScrollView>
+              }}
+              ListFooterComponent={
+                <TouchableOpacity
+                  style={styles.addBtn}
+                  onPress={() => {
+                    setDayModalVisible(false);
+                    if (selectedDate) openCreate(selectedDate);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.addBtnText}>+ Nueva auditoría</Text>
+                </TouchableOpacity>
+              }
+            />
           </View>
         </TouchableOpacity>
       </Modal>
 
-      <Modal visible={formVisible} transparent animationType="slide">
+      {/* MODAL: FORMULARIO */}
+      <Modal visible={formVisible} transparent animationType="slide" onRequestClose={() => setFormVisible(false)}>
         <View style={styles.formOverlay}>
           <View style={styles.formSheet}>
             <View style={styles.formHeader}>
-              <Text style={styles.formTitle}>
-                {editingEvent ? 'Editar auditoría' : 'Nueva auditoría'}
-              </Text>
-              <TouchableOpacity onPress={() => setFormVisible(false)}>
-                <Text style={styles.modalClose}>✕</Text>
+              <View>
+                <Text style={styles.formTitle}>
+                  {editingEvent ? 'Editar auditoría' : 'Nueva auditoría'}
+                </Text>
+                {selectedDate && (
+                  <Text style={styles.formDate}>
+                    {parseInt(selectedDate.split('-')[2], 10)} de {MONTHS_ES[parseInt(selectedDate.split('-')[1], 10) - 1]} de {YEAR}
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity style={styles.formCloseBtn} onPress={() => setFormVisible(false)} activeOpacity={0.8}>
+                <Text style={styles.formCloseBtnText}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <ScrollView>
-              <CustomPicker
-                label="Ingeniero"
-                value={memberId}
-                options={monthOptions}
-                onSelect={setMemberId}
-                placeholder="Seleccionar ingeniero..."
-                searchable
-              />
-
-              <CustomPicker
-                label="Tipo"
-                value={tipo}
-                options={AUDIT_TYPES}
-                onSelect={(v) => setTipo(v as AuditType)}
-                placeholder="Seleccionar tipo..."
-              />
-
-              <View style={styles.checkRow}>
-                <Text style={styles.checkLabel}>¿Cumplido?</Text>
-                <TouchableOpacity
-                  style={[styles.checkBtn, cumplido && styles.checkBtnActive]}
-                  onPress={() => setCumplido((v) => !v)}
-                >
-                  <Text style={[styles.checkBtnText, cumplido && styles.checkBtnTextActive]}>
-                    {cumplido ? 'Sí' : 'No'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.fieldWrapper}>
-                <Text style={styles.fieldLabel}>Descripción</Text>
-                <TextInput
-                  style={styles.textArea}
-                  value={detalle}
-                  onChangeText={setDetalle}
-                  placeholder="Escribe una observación..."
-                  placeholderTextColor="#9CA3AF"
-                  multiline
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <View style={styles.formBody}>
+                <CustomPicker
+                  label="Ingeniero"
+                  value={memberId}
+                  options={memberOptions}
+                  onSelect={setMemberId}
+                  placeholder="Seleccionar ingeniero..."
+                  searchable
                 />
-              </View>
 
-              <TouchableOpacity style={styles.saveBtn} onPress={save} disabled={saving}>
-                {saving ? (
-                  <ActivityIndicator color="#FFF" />
-                ) : (
-                  <Text style={styles.saveBtnText}>
-                    {editingEvent ? 'Actualizar' : 'Guardar'}
-                  </Text>
-                )}
-              </TouchableOpacity>
+                <CustomPicker
+                  label="Tipo de auditoría"
+                  value={tipo}
+                  options={AUDIT_TYPES}
+                  onSelect={(v) => setTipo(v as AuditType)}
+                  placeholder="Seleccionar tipo..."
+                />
+
+                <View style={styles.checkRow}>
+                  <View>
+                    <Text style={styles.checkLabel}>¿Cumplido?</Text>
+                    <Text style={styles.checkHint}>Indica si la auditoría fue completada</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.checkBtn, cumplido ? styles.checkBtnSi : styles.checkBtnNo]}
+                    onPress={() => setCumplido((v) => !v)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.checkBtnText, cumplido ? styles.checkBtnTextSi : styles.checkBtnTextNo]}>
+                      {cumplido ? '✓  Sí' : '✗  No'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.fieldWrapper}>
+                  <Text style={styles.fieldLabel}>Descripción (opcional)</Text>
+                  <TextInput
+                    style={styles.textArea}
+                    value={detalle}
+                    onChangeText={setDetalle}
+                    placeholder="Escribe una observación o detalle..."
+                    placeholderTextColor="#9CA3AF"
+                    multiline
+                    numberOfLines={4}
+                    textAlignVertical="top"
+                  />
+                </View>
+
+                <View style={styles.formActions}>
+                  {editingEvent && (
+                    <TouchableOpacity
+                      style={styles.deleteBtn}
+                      onPress={async () => {
+                        if (editingEvent) {
+                          await removeEvent(editingEvent.id);
+                          setFormVisible(false);
+                        }
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.deleteBtnText}>🗑  Eliminar</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  <TouchableOpacity
+                    style={styles.saveBtn}
+                    onPress={save}
+                    disabled={saving}
+                    activeOpacity={0.85}
+                  >
+                    {saving ? (
+                      <ActivityIndicator color="#FFF" />
+                    ) : (
+                      <Text style={styles.saveBtnText}>
+                        {editingEvent ? '✓  Actualizar' : '✓  Guardar'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
             </ScrollView>
           </View>
         </View>
@@ -467,131 +603,187 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
   );
 };
 
-const Stat = ({ label, value }: { label: string; value: number }) => (
-  <View style={styles.statBox}>
-    <Text style={styles.statValue}>{value}</Text>
-    <Text style={styles.statLabel}>{label}</Text>
-  </View>
-);
-
-const MiniBadge = ({ text }: { text: string }) => (
-  <View style={styles.miniBadge}>
-    <Text style={styles.miniBadgeText}>{text}</Text>
-  </View>
-);
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F1F5F9' },
-  content: { padding: 14 },
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  loadingText: { marginTop: 10, color: '#6B7280', fontWeight: '600' },
-
-  statsBar: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-  },
-  statBox: {
-    flexGrow: 1,
-    minWidth: 96,
-    backgroundColor: '#FFF',
-    borderRadius: 14,
-    padding: 12,
-  },
-  statValue: { fontSize: 20, fontWeight: '900', color: '#111827' },
-  statLabel: { fontSize: 11, color: '#6B7280', fontWeight: '700', marginTop: 2 },
+  content: { padding: 12 },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingText: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
 
   filterSection: {
     backgroundColor: '#FFF',
     borderRadius: 14,
     padding: 14,
-    marginBottom: 12,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   filterTitle: {
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#9CA3AF',
-    textTransform: 'uppercase',
+    letterSpacing: 0.5,
     marginBottom: 10,
+    textTransform: 'uppercase',
   },
+  monthScroll: { flexDirection: 'row' },
   monthChip: {
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
+    paddingVertical: 7,
+    borderRadius: 20,
     backgroundColor: '#F3F4F6',
     marginRight: 6,
   },
   monthChipActive: { backgroundColor: '#2563EB' },
-  monthChipText: { color: '#6B7280', fontWeight: '700' },
+  monthChipText: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
   monthChipTextActive: { color: '#FFF' },
 
-  monthCard: {
+  statsCard: {
     backgroundColor: '#FFF',
-    borderRadius: 18,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  statsTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 12,
+  },
+  statRow: {
+    borderLeftWidth: 4,
+    borderRadius: 4,
+    paddingLeft: 12,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  statTypeBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    minWidth: 46,
+    alignItems: 'center',
+  },
+  statTypeText: { fontSize: 13, fontWeight: '900', letterSpacing: 0.5 },
+  statCols: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  statCol: { flex: 1, alignItems: 'center' },
+  statNumber: { fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
+  statLabel: { fontSize: 10, color: '#9CA3AF', fontWeight: '600', marginTop: 2 },
+  statDivider: { width: 1, height: 36, backgroundColor: '#E5E7EB', marginHorizontal: 4 },
+
+  monthBlock: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
     overflow: 'hidden',
-    marginBottom: 14,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
   },
   monthHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#1E3A8A',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 8,
   },
-  monthTitle: { fontSize: 18, fontWeight: '900', color: '#111827' },
-  monthSub: { fontSize: 12, color: '#6B7280', fontWeight: '600' },
-  monthBadges: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' },
-  miniBadge: {
-    backgroundColor: '#EEF2FF',
-    borderRadius: 999,
+  monthName: { fontSize: 17, fontWeight: '800', color: '#FFF', letterSpacing: -0.3 },
+  monthBadgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  monthMiniBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
+    borderRadius: 10,
   },
-  miniBadgeText: { fontSize: 10, fontWeight: '800', color: '#3730A3' },
+  monthMiniBadgeText: { fontSize: 10, fontWeight: '900' },
+  monthMiniBadgeGreen: {
+    backgroundColor: '#D1FAE5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  monthMiniBadgeGreenText: { fontSize: 10, fontWeight: '900', color: '#065F46' },
+  monthMiniBadgeRed: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  monthMiniBadgeRedText: { fontSize: 10, fontWeight: '900', color: '#991B1B' },
 
-  weekRow: { flexDirection: 'row', backgroundColor: '#F8FAFC', paddingVertical: 8 },
-  weekDay: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '800', color: '#64748B' },
-  row: { flexDirection: 'row', paddingHorizontal: 4, paddingVertical: 2 },
-  emptyCell: { flex: 1, minHeight: 92, margin: 2 },
+  weekRow: {
+    flexDirection: 'row',
+    backgroundColor: '#EFF6FF',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  weekDay: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1E40AF',
+  },
+  gridRow: { flexDirection: 'row', paddingHorizontal: 4, paddingVertical: 2 },
+  emptyCell: { flex: 1, margin: 2, minHeight: 92 },
   dayCell: {
     flex: 1,
     minHeight: 92,
     margin: 2,
-    borderRadius: 12,
+    borderRadius: 10,
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
     borderColor: '#E5E7EB',
     padding: 6,
   },
-  todayCell: { borderColor: '#2563EB', borderWidth: 2, backgroundColor: '#EFF6FF' },
-  dayCellWithEvents: { backgroundColor: '#FFFFFF' },
+  todayCell: { borderWidth: 2, borderColor: '#2563EB', backgroundColor: '#EFF6FF' },
+  hasCellEvents: { backgroundColor: '#FFFFFF' },
   dayNum: { fontSize: 12, fontWeight: '900', color: '#374151' },
   todayNum: { color: '#2563EB' },
-  eventPill: {
+
+  eventStack: { marginTop: 5, gap: 4 },
+  eventChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
     backgroundColor: '#F8FAFF',
     borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    marginTop: 5,
+    borderLeftWidth: 3,
+    paddingVertical: 3,
+    paddingHorizontal: 5,
   },
-  eventDot: { width: 7, height: 7, borderRadius: 999 },
-  eventText: { flex: 1, fontSize: 10, fontWeight: '700', color: '#334155' },
-  moreText: { marginTop: 4, fontSize: 10, fontWeight: '800', color: '#3730A3' },
+  eventDot: { width: 6, height: 6, borderRadius: 999 },
+  eventChipText: { flex: 1, fontSize: 9, fontWeight: '700', color: '#334155' },
+  checkIcon: { fontSize: 9, fontWeight: '900', color: '#059669' },
+  moreChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EEF2FF',
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  moreChipText: { fontSize: 9, fontWeight: '800', color: '#3730A3' },
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.48)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
-    padding: 20,
+    padding: 18,
   },
   modalSheet: {
     backgroundColor: '#FFF',
-    borderRadius: 20,
+    borderRadius: 18,
     maxHeight: '80%',
     overflow: 'hidden',
   },
@@ -603,31 +795,56 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
-  modalTitle: { fontSize: 16, fontWeight: '900', color: '#111827' },
-  modalClose: { fontSize: 18, color: '#6B7280', fontWeight: '800' },
+  modalTitle: { fontSize: 16, fontWeight: '800', color: '#111827', flex: 1, paddingRight: 10 },
+  modalClose: { fontSize: 18, color: '#6B7280', fontWeight: '700' },
 
-  modalItem: {
-    margin: 16,
-    marginBottom: 10,
+  dayModalItem: {
+    marginHorizontal: 14,
+    marginTop: 12,
+    padding: 12,
     borderRadius: 14,
+    borderLeftWidth: 4,
+    backgroundColor: '#FAFAFA',
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    padding: 12,
-    backgroundColor: '#FAFAFA',
   },
-  modalItemType: { fontSize: 12, fontWeight: '900', color: '#2563EB' },
-  modalItemName: { fontSize: 14, fontWeight: '800', color: '#111827', marginTop: 4 },
-  modalItemDetail: { fontSize: 13, color: '#059669', fontWeight: '700', marginTop: 4 },
-  modalItemDesc: { fontSize: 13, color: '#6B7280', marginTop: 4 },
+  dayModalItemTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  dayModalBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  dayModalBadgeText: { fontSize: 12, fontWeight: '900' },
+  cumpliBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  cumpliSi: { backgroundColor: '#D1FAE5' },
+  cumpliNo: { backgroundColor: '#FEE2E2' },
+  cumpliText: { fontSize: 11, fontWeight: '800' },
+  cumpliSiText: { color: '#065F46' },
+  cumpliNoText: { color: '#991B1B' },
+  dayModalMemberRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  memberDot2: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memberDot2Text: { color: '#FFF', fontSize: 9, fontWeight: '900' },
+  dayModalMemberName: { fontSize: 14, fontWeight: '700', color: '#111827' },
+  dayModalDetalle: { fontSize: 12, color: '#6B7280', marginTop: 6 },
 
   addBtn: {
-    margin: 16,
+    margin: 14,
     borderRadius: 14,
     backgroundColor: '#2563EB',
     paddingVertical: 14,
     alignItems: 'center',
   },
-  addBtnText: { color: '#FFF', fontSize: 15, fontWeight: '900' },
+  addBtnText: { color: '#FFF', fontSize: 15, fontWeight: '800' },
 
   formOverlay: {
     flex: 1,
@@ -638,16 +855,33 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 16,
-    maxHeight: '90%',
+    maxHeight: '92%',
+    overflow: 'hidden',
   },
-  formTitle: { fontSize: 18, fontWeight: '900', color: '#111827' },
   formHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    borderTopWidth: 4,
+    borderTopColor: '#2563EB',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
+  formTitle: { fontSize: 17, fontWeight: '800', color: '#111827' },
+  formDate: { fontSize: 13, color: '#6B7280', marginTop: 2, textTransform: 'capitalize' },
+  formCloseBtn: {
+    padding: 8,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 20,
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  formCloseBtnText: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
+  formBody: { padding: 20, paddingBottom: 40 },
 
   checkRow: {
     flexDirection: 'row',
@@ -655,47 +889,63 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 14,
     backgroundColor: '#F9FAFB',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#E5E7EB',
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 10,
+    padding: 14,
   },
-  checkLabel: { fontSize: 14, fontWeight: '800', color: '#374151' },
+  checkLabel: { fontSize: 14, fontWeight: '700', color: '#374151' },
+  checkHint: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
   checkBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#E5E7EB',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+    minWidth: 80,
+    alignItems: 'center',
   },
-  checkBtnActive: { backgroundColor: '#DCFCE7' },
-  checkBtnText: { fontWeight: '900', color: '#4B5563' },
-  checkBtnTextActive: { color: '#166534' },
+  checkBtnSi: { backgroundColor: '#D1FAE5' },
+  checkBtnNo: { backgroundColor: '#FEE2E2' },
+  checkBtnText: { fontSize: 13, fontWeight: '800' },
+  checkBtnTextSi: { color: '#065F46' },
+  checkBtnTextNo: { color: '#991B1B' },
 
   fieldWrapper: { marginBottom: 14 },
   fieldLabel: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '600',
     color: '#374151',
     marginBottom: 6,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   textArea: {
-    minHeight: 110,
     backgroundColor: '#F9FAFB',
     borderWidth: 1.5,
     borderColor: '#E5E7EB',
-    borderRadius: 12,
-    padding: 12,
-    textAlignVertical: 'top',
+    borderRadius: 10,
+    padding: 14,
+    fontSize: 15,
+    color: '#111827',
+    minHeight: 100,
   },
-  saveBtn: {
-    borderRadius: 14,
-    backgroundColor: '#2563EB',
+
+  formActions: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  deleteBtn: {
+    flex: 1,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 6,
   },
-  saveBtnText: { color: '#FFF', fontSize: 15, fontWeight: '900' },
+  deleteBtnText: { fontSize: 15, fontWeight: '600', color: '#DC2626' },
+  saveBtn: {
+    flex: 2,
+    backgroundColor: '#2563EB',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  saveBtnText: { fontSize: 15, fontWeight: '700', color: '#FFF' },
 });
 
 export default AuditCalendarScreen;
