@@ -62,6 +62,7 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState<string>('');
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dayEvents, setDayEvents] = useState<AuditEvent[]>([]);
@@ -98,7 +99,10 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
   };
 
   const memberOptions = useMemo(
-    () => members.map((m) => ({ label: m.name, value: m.id })),
+    () => [
+      { label: 'Todos los ingenieros', value: '' },
+      ...members.map((m) => ({ label: m.name, value: m.id })),
+    ],
     [members],
   );
 
@@ -113,14 +117,17 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
     );
   };
 
+  // Eventos filtrados por mes + ingeniero (para estadísticas y calendarios)
   const filteredEvents = useMemo(() => {
-    if (selectedMonths.length === 0) return events;
     return events.filter((e) => {
       const [, mo] = e.date.split('-').map(Number);
-      return selectedMonths.includes(mo);
+      const monthOk = selectedMonths.length === 0 || selectedMonths.includes(mo);
+      const memberOk = !selectedMemberId || e.memberId === selectedMemberId;
+      return monthOk && memberOk;
     });
-  }, [events, selectedMonths]);
+  }, [events, selectedMonths, selectedMemberId]);
 
+  // Stats sobre los eventos filtrados
   const stats = useMemo(() => {
     const base = {
       AV1: { total: 0, cumplidos: 0, noCumplidos: 0 },
@@ -137,6 +144,10 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
     return base;
   }, [filteredEvents]);
 
+  const totalGeneral = stats.AV1.total + stats.AV2.total + stats.AV3.total;
+  const totalCumplidos = stats.AV1.cumplidos + stats.AV2.cumplidos + stats.AV3.cumplidos;
+  const totalNoCumplidos = stats.AV1.noCumplidos + stats.AV2.noCumplidos + stats.AV3.noCumplidos;
+
   const monthsToRender =
     selectedMonths.length > 0
       ? [...selectedMonths].sort((a, b) => a - b)
@@ -145,7 +156,7 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
   const openCreate = (date: string) => {
     setSelectedDate(date);
     setEditingEvent(null);
-    setMemberId(members[0]?.id || '');
+    setMemberId(selectedMemberId || members[0]?.id || '');
     setTipo('AV1');
     setCumplido(false);
     setDetalle('');
@@ -163,6 +174,7 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
   };
 
   const onDayPress = (date: string) => {
+    // Para el modal del día, mostrar TODOS los eventos del día (sin filtro de miembro)
     const evs = events.filter((e) => e.date === date);
     setSelectedDate(date);
     setDayEvents(evs);
@@ -197,10 +209,18 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
     try {
       await AuditService.deleteAuditEvent(id);
       setDayModalVisible(false);
+      setFormVisible(false);
       await loadEvents();
     } catch (err) {
       console.error('Error eliminando auditoría:', err);
     }
+  };
+
+  const hasActiveFilters = selectedMonths.length > 0 || !!selectedMemberId;
+
+  const clearFilters = () => {
+    setSelectedMonths([]);
+    setSelectedMemberId('');
   };
 
   if (loading) {
@@ -212,12 +232,7 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
     );
   }
 
-  const statsLabel =
-    selectedMonths.length === 0
-      ? 'Todo el año 2026'
-      : selectedMonths.length === 1
-      ? MONTHS_ES[selectedMonths[0] - 1]
-      : `${selectedMonths.length} meses seleccionados`;
+  const selectedMember = selectedMemberId ? memberById(selectedMemberId) : null;
 
   return (
     <>
@@ -234,30 +249,82 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
           />
         }
       >
-        {/* FILTRO MES */}
-        <View style={styles.filterSection}>
-          <Text style={styles.filterTitle}>Filtrar por mes:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.monthScroll}>
+
+        {/* ── FILTROS ── */}
+        <View style={styles.filterCard}>
+          <View style={styles.filterCardHeader}>
+            <Text style={styles.filterCardTitle}>Filtros</Text>
+            {hasActiveFilters && (
+              <TouchableOpacity onPress={clearFilters} activeOpacity={0.7} style={styles.clearBtn}>
+                <Text style={styles.clearBtnText}>✕ Limpiar</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Filtro ingeniero */}
+          <Text style={styles.filterLabel}>Ingeniero:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
             <TouchableOpacity
-              style={[styles.monthChip, selectedMonths.length === 0 && styles.monthChipActive]}
-              onPress={() => setSelectedMonths([])}
+              style={[styles.chip, !selectedMemberId && styles.chipActive]}
+              onPress={() => setSelectedMemberId('')}
               activeOpacity={0.8}
             >
-              <Text style={[styles.monthChipText, selectedMonths.length === 0 && styles.monthChipTextActive]}>
+              <Text style={[styles.chipText, !selectedMemberId && styles.chipTextActive]}>
                 Todos
               </Text>
             </TouchableOpacity>
+            {members.map((m) => {
+              const active = selectedMemberId === m.id;
+              return (
+                <TouchableOpacity
+                  key={m.id}
+                  style={[
+                    styles.chip,
+                    active && styles.chipActiveMember,
+                    active && { borderColor: m.color },
+                  ]}
+                  onPress={() => setSelectedMemberId(active ? '' : m.id)}
+                  activeOpacity={0.8}
+                >
+                  {active && (
+                    <View style={[styles.chipDot, { backgroundColor: m.color }]} />
+                  )}
+                  <Text
+                    style={[
+                      styles.chipText,
+                      active && { color: m.color, fontWeight: '700' },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {m.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
 
+          {/* Filtro mes */}
+          <Text style={[styles.filterLabel, { marginTop: 12 }]}>Mes:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+            <TouchableOpacity
+              style={[styles.chip, selectedMonths.length === 0 && styles.chipActive]}
+              onPress={() => setSelectedMonths([])}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.chipText, selectedMonths.length === 0 && styles.chipTextActive]}>
+                Todos
+              </Text>
+            </TouchableOpacity>
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
               const active = selectedMonths.includes(m);
               return (
                 <TouchableOpacity
                   key={m}
-                  style={[styles.monthChip, active && styles.monthChipActive]}
+                  style={[styles.chip, active && styles.chipActive]}
                   onPress={() => toggleMonth(m)}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.monthChipText, active && styles.monthChipTextActive]}>
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>
                     {MONTHS_ES[m - 1].slice(0, 3)}
                   </Text>
                 </TouchableOpacity>
@@ -266,37 +333,87 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
           </ScrollView>
         </View>
 
-        {/* ESTADÍSTICAS */}
+        {/* ── ESTADÍSTICAS ── */}
         <View style={styles.statsCard}>
-          <Text style={styles.statsTitle}>Estadísticas · {statsLabel}</Text>
+          {/* Encabezado con contexto del filtro */}
+          <View style={styles.statsHeader}>
+            <View>
+              <Text style={styles.statsTitle}>Resumen de auditorías</Text>
+              <Text style={styles.statsSubtitle}>
+                {selectedMember ? selectedMember.name : 'Todos los ingenieros'}
+                {selectedMonths.length === 1
+                  ? ` · ${MONTHS_ES[selectedMonths[0] - 1]}`
+                  : selectedMonths.length > 1
+                  ? ` · ${selectedMonths.length} meses`
+                  : ' · 2026 completo'}
+              </Text>
+            </View>
+            {selectedMember && (
+              <View style={[styles.memberAvatarLg, { backgroundColor: selectedMember.color }]}>
+                <Text style={styles.memberAvatarLgText}>{selectedMember.initials}</Text>
+              </View>
+            )}
+          </View>
 
-          {(['AV1', 'AV2', 'AV3'] as AuditType[]).map((tipo) => {
-            const s = stats[tipo];
-            const c = AV_COLORS[tipo];
+          {/* Totales generales */}
+          <View style={styles.totalesRow}>
+            <View style={[styles.totalBox, styles.totalBoxBlue]}>
+              <Text style={[styles.totalNum, { color: '#1E3A8A' }]}>{totalGeneral}</Text>
+              <Text style={[styles.totalLbl, { color: '#3B82F6' }]}>Total</Text>
+            </View>
+            <View style={[styles.totalBox, styles.totalBoxGreen]}>
+              <Text style={[styles.totalNum, { color: '#065F46' }]}>{totalCumplidos}</Text>
+              <Text style={[styles.totalLbl, { color: '#059669' }]}>Cumplidas</Text>
+            </View>
+            <View style={[styles.totalBox, styles.totalBoxRed]}>
+              <Text style={[styles.totalNum, { color: '#991B1B' }]}>{totalNoCumplidos}</Text>
+              <Text style={[styles.totalLbl, { color: '#DC2626' }]}>No cumplidas</Text>
+            </View>
+          </View>
+
+          {/* Desglose por tipo */}
+          <View style={styles.desgloseSep} />
+          <Text style={styles.desgloseTitle}>Desglose por tipo</Text>
+
+          {(['AV1', 'AV2', 'AV3'] as AuditType[]).map((t) => {
+            const s = stats[t];
+            const c = AV_COLORS[t];
+            const pct = s.total > 0 ? Math.round((s.cumplidos / s.total) * 100) : 0;
             return (
-              <View key={tipo} style={[styles.statRow, { borderLeftColor: c.color }]}>
-                <View style={[styles.statTypeBadge, { backgroundColor: c.bg }]}>
-                  <Text style={[styles.statTypeText, { color: c.text }]}>{tipo}</Text>
+              <View key={t} style={styles.desgloseRow}>
+                {/* Etiqueta tipo */}
+                <View style={[styles.desgloseBadge, { backgroundColor: c.bg }]}>
+                  <Text style={[styles.desgloseBadgeText, { color: c.text }]}>{t}</Text>
                 </View>
 
-                <View style={styles.statCols}>
-                  <View style={styles.statCol}>
-                    <Text style={[styles.statNumber, { color: c.color }]}>{s.total}</Text>
-                    <Text style={styles.statLabel}>Total</Text>
+                {/* Barra de progreso */}
+                <View style={styles.barWrap}>
+                  <View style={styles.barBg}>
+                    <View
+                      style={[
+                        styles.barFill,
+                        { width: `${pct}%` as any, backgroundColor: c.color },
+                      ]}
+                    />
                   </View>
+                  <Text style={[styles.barPct, { color: c.color }]}>{pct}%</Text>
+                </View>
 
-                  <View style={styles.statDivider} />
-
-                  <View style={styles.statCol}>
-                    <Text style={[styles.statNumber, { color: '#059669' }]}>{s.cumplidos}</Text>
-                    <Text style={styles.statLabel}>Cumplidas</Text>
+                {/* Conteos */}
+                <View style={styles.desgloseNums}>
+                  <View style={styles.desgloseNumItem}>
+                    <Text style={[styles.desgloseNum, { color: c.color }]}>{s.total}</Text>
+                    <Text style={styles.desgloseNumLbl}>total</Text>
                   </View>
-
-                  <View style={styles.statDivider} />
-
-                  <View style={styles.statCol}>
-                    <Text style={[styles.statNumber, { color: '#DC2626' }]}>{s.noCumplidos}</Text>
-                    <Text style={styles.statLabel}>No cumplidas</Text>
+                  <View style={styles.desgloseNumSep} />
+                  <View style={styles.desgloseNumItem}>
+                    <Text style={[styles.desgloseNum, { color: '#059669' }]}>{s.cumplidos}</Text>
+                    <Text style={styles.desgloseNumLbl}>✓</Text>
+                  </View>
+                  <View style={styles.desgloseNumSep} />
+                  <View style={styles.desgloseNumItem}>
+                    <Text style={[styles.desgloseNum, { color: '#DC2626' }]}>{s.noCumplidos}</Text>
+                    <Text style={styles.desgloseNumLbl}>✗</Text>
                   </View>
                 </View>
               </View>
@@ -304,22 +421,23 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
           })}
         </View>
 
-        {/* CALENDARIOS */}
+        {/* ── CALENDARIOS ── */}
         {monthsToRender.map((month) => {
           const daysInMonth = getDaysInMonth(YEAR, month);
           const firstDayOffset = getFirstDayOfMonth(YEAR, month);
 
-          const monthEvs = events.filter((e) => {
+          // Para los badges del mes usamos filteredEvents
+          const monthFiltered = filteredEvents.filter((e) => {
             const [, m] = e.date.split('-').map(Number);
             return m === month;
           });
 
           const monthStats = {
-            AV1: monthEvs.filter((e) => e.tipo === 'AV1').length,
-            AV2: monthEvs.filter((e) => e.tipo === 'AV2').length,
-            AV3: monthEvs.filter((e) => e.tipo === 'AV3').length,
-            cumplidos: monthEvs.filter((e) => e.cumplido).length,
-            noCumplidos: monthEvs.filter((e) => !e.cumplido).length,
+            AV1: monthFiltered.filter((e) => e.tipo === 'AV1').length,
+            AV2: monthFiltered.filter((e) => e.tipo === 'AV2').length,
+            AV3: monthFiltered.filter((e) => e.tipo === 'AV3').length,
+            cumplidos: monthFiltered.filter((e) => e.cumplido).length,
+            noCumplidos: monthFiltered.filter((e) => !e.cumplido).length,
           };
 
           const cells: Array<{ day: number | null; date: string | null }> = [];
@@ -332,19 +450,17 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
           return (
             <View key={month} style={styles.monthBlock}>
               <View style={styles.monthHeader}>
-                <View>
-                  <Text style={styles.monthName}>{MONTHS_ES[month - 1]} {YEAR}</Text>
-                </View>
+                <Text style={styles.monthName}>{MONTHS_ES[month - 1]} {YEAR}</Text>
                 <View style={styles.monthBadgesRow}>
-                  {(['AV1', 'AV2', 'AV3'] as AuditType[]).map((t) => (
+                  {(['AV1', 'AV2', 'AV3'] as AuditType[]).map((t) =>
                     monthStats[t] > 0 ? (
                       <View key={t} style={[styles.monthMiniBadge, { backgroundColor: AV_COLORS[t].bg }]}>
                         <Text style={[styles.monthMiniBadgeText, { color: AV_COLORS[t].text }]}>
                           {t} {monthStats[t]}
                         </Text>
                       </View>
-                    ) : null
-                  ))}
+                    ) : null,
+                  )}
                   {monthStats.cumplidos > 0 && (
                     <View style={styles.monthMiniBadgeGreen}>
                       <Text style={styles.monthMiniBadgeGreenText}>✓ {monthStats.cumplidos}</Text>
@@ -371,7 +487,8 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
                       return <View key={colIdx} style={styles.emptyCell} />;
                     }
 
-                    const cellEvents = events.filter((e) => e.date === cell.date);
+                    // Celdas del calendario: filtrar por ingeniero si hay filtro activo
+                    const cellEvents = filteredEvents.filter((e) => e.date === cell.date);
                     const isToday = cell.date === todayStr;
 
                     return (
@@ -402,9 +519,7 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
                                 <Text style={styles.eventChipText} numberOfLines={1}>
                                   {ev.tipo} · {m?.initials || '??'}
                                 </Text>
-                                {ev.cumplido && (
-                                  <Text style={styles.checkIcon}>✓</Text>
-                                )}
+                                {ev.cumplido && <Text style={styles.checkIcon}>✓</Text>}
                               </View>
                             );
                           })}
@@ -426,12 +541,24 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* MODAL: ACTIVIDADES DEL DÍA */}
-      <Modal visible={dayModalVisible} transparent animationType="fade" onRequestClose={() => setDayModalVisible(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setDayModalVisible(false)}>
+      {/* ── MODAL: DÍA ── */}
+      <Modal
+        visible={dayModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDayModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setDayModalVisible(false)}
+        >
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Auditorías · {selectedDate?.split('-')[2]} {selectedDate ? MONTHS_ES[parseInt(selectedDate.split('-')[1], 10) - 1] : ''}</Text>
+              <Text style={styles.modalTitle}>
+                Auditorías · {selectedDate?.split('-')[2]}{' '}
+                {selectedDate ? MONTHS_ES[parseInt(selectedDate.split('-')[1], 10) - 1] : ''}
+              </Text>
               <TouchableOpacity onPress={() => setDayModalVisible(false)}>
                 <Text style={styles.modalClose}>✕</Text>
               </TouchableOpacity>
@@ -494,32 +621,45 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
         </TouchableOpacity>
       </Modal>
 
-      {/* MODAL: FORMULARIO */}
-      <Modal visible={formVisible} transparent animationType="slide" onRequestClose={() => setFormVisible(false)}>
+      {/* ── MODAL: FORMULARIO ── */}
+      <Modal
+        visible={formVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setFormVisible(false)}
+      >
         <View style={styles.formOverlay}>
           <View style={styles.formSheet}>
             <View style={styles.formHeader}>
-              <View>
+              <View style={{ flexShrink: 1, paddingRight: 10 }}>
                 <Text style={styles.formTitle}>
                   {editingEvent ? 'Editar auditoría' : 'Nueva auditoría'}
                 </Text>
                 {selectedDate && (
                   <Text style={styles.formDate}>
-                    {parseInt(selectedDate.split('-')[2], 10)} de {MONTHS_ES[parseInt(selectedDate.split('-')[1], 10) - 1]} de {YEAR}
+                    {parseInt(selectedDate.split('-')[2], 10)} de{' '}
+                    {MONTHS_ES[parseInt(selectedDate.split('-')[1], 10) - 1]} de {YEAR}
                   </Text>
                 )}
               </View>
-              <TouchableOpacity style={styles.formCloseBtn} onPress={() => setFormVisible(false)} activeOpacity={0.8}>
+              <TouchableOpacity
+                style={styles.formCloseBtn}
+                onPress={() => setFormVisible(false)}
+                activeOpacity={0.8}
+              >
                 <Text style={styles.formCloseBtnText}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               <View style={styles.formBody}>
                 <CustomPicker
                   label="Ingeniero"
                   value={memberId}
-                  options={memberOptions}
+                  options={memberOptions.filter((o) => o.value !== '')}
                   onSelect={setMemberId}
                   placeholder="Seleccionar ingeniero..."
                   searchable
@@ -536,14 +676,24 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
                 <View style={styles.checkRow}>
                   <View>
                     <Text style={styles.checkLabel}>¿Cumplido?</Text>
-                    <Text style={styles.checkHint}>Indica si la auditoría fue completada</Text>
+                    <Text style={styles.checkHint}>
+                      Indica si la auditoría fue completada
+                    </Text>
                   </View>
                   <TouchableOpacity
-                    style={[styles.checkBtn, cumplido ? styles.checkBtnSi : styles.checkBtnNo]}
+                    style={[
+                      styles.checkBtn,
+                      cumplido ? styles.checkBtnSi : styles.checkBtnNo,
+                    ]}
                     onPress={() => setCumplido((v) => !v)}
                     activeOpacity={0.8}
                   >
-                    <Text style={[styles.checkBtnText, cumplido ? styles.checkBtnTextSi : styles.checkBtnTextNo]}>
+                    <Text
+                      style={[
+                        styles.checkBtnText,
+                        cumplido ? styles.checkBtnTextSi : styles.checkBtnTextNo,
+                      ]}
+                    >
                       {cumplido ? '✓  Sí' : '✗  No'}
                     </Text>
                   </TouchableOpacity>
@@ -568,17 +718,13 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
                     <TouchableOpacity
                       style={styles.deleteBtn}
                       onPress={async () => {
-                        if (editingEvent) {
-                          await removeEvent(editingEvent.id);
-                          setFormVisible(false);
-                        }
+                        if (editingEvent) await removeEvent(editingEvent.id);
                       }}
                       activeOpacity={0.8}
                     >
                       <Text style={styles.deleteBtnText}>🗑  Eliminar</Text>
                     </TouchableOpacity>
                   )}
-
                   <TouchableOpacity
                     style={styles.saveBtn}
                     onPress={save}
@@ -609,7 +755,8 @@ const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
 
-  filterSection: {
+  // ── FILTROS ──
+  filterCard: {
     backgroundColor: '#FFF',
     borderRadius: 14,
     padding: 14,
@@ -620,30 +767,58 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  filterTitle: {
+  filterCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  filterCardTitle: {
     fontSize: 11,
     fontWeight: '700',
     color: '#9CA3AF',
     letterSpacing: 0.5,
-    marginBottom: 10,
     textTransform: 'uppercase',
   },
-  monthScroll: { flexDirection: 'row' },
-  monthChip: {
-    paddingHorizontal: 14,
+  clearBtn: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  clearBtnText: { fontSize: 11, fontWeight: '700', color: '#DC2626' },
+  filterLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  chipScroll: { flexDirection: 'row' },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 20,
     backgroundColor: '#F3F4F6',
     marginRight: 6,
+    gap: 5,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
   },
-  monthChipActive: { backgroundColor: '#2563EB' },
-  monthChipText: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
-  monthChipTextActive: { color: '#FFF' },
+  chipActive: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  chipActiveMember: { backgroundColor: '#F8FAFF' },
+  chipDot: { width: 7, height: 7, borderRadius: 999 },
+  chipText: { fontSize: 12, fontWeight: '600', color: '#6B7280' },
+  chipTextActive: { color: '#FFF' },
 
+  // ── ESTADÍSTICAS ──
   statsCard: {
     backgroundColor: '#FFF',
     borderRadius: 14,
-    padding: 14,
+    padding: 16,
     marginBottom: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -651,37 +826,97 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  statsTitle: {
+  statsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  statsTitle: { fontSize: 15, fontWeight: '800', color: '#111827' },
+  statsSubtitle: { fontSize: 12, color: '#6B7280', marginTop: 2, fontWeight: '500' },
+  memberAvatarLg: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memberAvatarLgText: { color: '#FFF', fontWeight: '900', fontSize: 13 },
+
+  totalesRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  totalBox: {
+    flex: 1,
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+  },
+  totalBoxBlue: { backgroundColor: '#EFF6FF' },
+  totalBoxGreen: { backgroundColor: '#ECFDF5' },
+  totalBoxRed: { backgroundColor: '#FEF2F2' },
+  totalNum: { fontSize: 26, fontWeight: '900', letterSpacing: -1 },
+  totalLbl: { fontSize: 11, fontWeight: '700', marginTop: 2 },
+
+  desgloseSep: {
+    height: 1,
+    backgroundColor: '#F3F4F6',
+    marginBottom: 12,
+  },
+  desgloseTitle: {
     fontSize: 11,
     fontWeight: '700',
     color: '#9CA3AF',
-    letterSpacing: 0.5,
     textTransform: 'uppercase',
-    marginBottom: 12,
+    letterSpacing: 0.5,
+    marginBottom: 10,
   },
-  statRow: {
-    borderLeftWidth: 4,
-    borderRadius: 4,
-    paddingLeft: 12,
-    marginBottom: 12,
+  desgloseRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
+    marginBottom: 10,
   },
-  statTypeBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-    minWidth: 46,
+  desgloseBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    minWidth: 44,
     alignItems: 'center',
   },
-  statTypeText: { fontSize: 13, fontWeight: '900', letterSpacing: 0.5 },
-  statCols: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-  statCol: { flex: 1, alignItems: 'center' },
-  statNumber: { fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
-  statLabel: { fontSize: 10, color: '#9CA3AF', fontWeight: '600', marginTop: 2 },
-  statDivider: { width: 1, height: 36, backgroundColor: '#E5E7EB', marginHorizontal: 4 },
+  desgloseBadgeText: { fontSize: 12, fontWeight: '900' },
+  barWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  barBg: {
+    flex: 1,
+    height: 7,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: 7,
+    borderRadius: 999,
+    minWidth: 4,
+  },
+  barPct: { fontSize: 11, fontWeight: '700', minWidth: 30, textAlign: 'right' },
+  desgloseNums: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  desgloseNumItem: { alignItems: 'center', minWidth: 26 },
+  desgloseNum: { fontSize: 14, fontWeight: '900' },
+  desgloseNumLbl: { fontSize: 9, color: '#9CA3AF', fontWeight: '600' },
+  desgloseNumSep: { width: 1, height: 20, backgroundColor: '#E5E7EB' },
 
+  // ── CALENDARIO ──
   monthBlock: {
     backgroundColor: '#FFF',
     borderRadius: 16,
@@ -701,25 +936,11 @@ const styles = StyleSheet.create({
   },
   monthName: { fontSize: 17, fontWeight: '800', color: '#FFF', letterSpacing: -0.3 },
   monthBadgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  monthMiniBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
+  monthMiniBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
   monthMiniBadgeText: { fontSize: 10, fontWeight: '900' },
-  monthMiniBadgeGreen: {
-    backgroundColor: '#D1FAE5',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
+  monthMiniBadgeGreen: { backgroundColor: '#D1FAE5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
   monthMiniBadgeGreenText: { fontSize: 10, fontWeight: '900', color: '#065F46' },
-  monthMiniBadgeRed: {
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
+  monthMiniBadgeRed: { backgroundColor: '#FEE2E2', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
   monthMiniBadgeRedText: { fontSize: 10, fontWeight: '900', color: '#991B1B' },
 
   weekRow: {
@@ -728,13 +949,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 4,
   },
-  weekDay: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#1E40AF',
-  },
+  weekDay: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '800', color: '#1E40AF' },
   gridRow: { flexDirection: 'row', paddingHorizontal: 4, paddingVertical: 2 },
   emptyCell: { flex: 1, margin: 2, minHeight: 92 },
   dayCell: {
@@ -751,7 +966,6 @@ const styles = StyleSheet.create({
   hasCellEvents: { backgroundColor: '#FFFFFF' },
   dayNum: { fontSize: 12, fontWeight: '900', color: '#374151' },
   todayNum: { color: '#2563EB' },
-
   eventStack: { marginTop: 5, gap: 4 },
   eventChip: {
     flexDirection: 'row',
@@ -775,6 +989,7 @@ const styles = StyleSheet.create({
   },
   moreChipText: { fontSize: 9, fontWeight: '800', color: '#3730A3' },
 
+  // ── MODAL DÍA ──
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -797,7 +1012,6 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 16, fontWeight: '800', color: '#111827', flex: 1, paddingRight: 10 },
   modalClose: { fontSize: 18, color: '#6B7280', fontWeight: '700' },
-
   dayModalItem: {
     marginHorizontal: 14,
     marginTop: 12,
@@ -809,34 +1023,19 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
   },
   dayModalItemTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  dayModalBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
+  dayModalBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
   dayModalBadgeText: { fontSize: 12, fontWeight: '900' },
-  cumpliBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
+  cumpliBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
   cumpliSi: { backgroundColor: '#D1FAE5' },
   cumpliNo: { backgroundColor: '#FEE2E2' },
   cumpliText: { fontSize: 11, fontWeight: '800' },
   cumpliSiText: { color: '#065F46' },
   cumpliNoText: { color: '#991B1B' },
   dayModalMemberRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  memberDot2: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  memberDot2: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   memberDot2Text: { color: '#FFF', fontSize: 9, fontWeight: '900' },
   dayModalMemberName: { fontSize: 14, fontWeight: '700', color: '#111827' },
   dayModalDetalle: { fontSize: 12, color: '#6B7280', marginTop: 6 },
-
   addBtn: {
     margin: 14,
     borderRadius: 14,
@@ -846,11 +1045,8 @@ const styles = StyleSheet.create({
   },
   addBtnText: { color: '#FFF', fontSize: 15, fontWeight: '800' },
 
-  formOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'flex-end',
-  },
+  // ── MODAL FORMULARIO ──
+  formOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   formSheet: {
     backgroundColor: '#FFF',
     borderTopLeftRadius: 24,
@@ -882,7 +1078,6 @@ const styles = StyleSheet.create({
   },
   formCloseBtnText: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
   formBody: { padding: 20, paddingBottom: 40 },
-
   checkRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -896,19 +1091,12 @@ const styles = StyleSheet.create({
   },
   checkLabel: { fontSize: 14, fontWeight: '700', color: '#374151' },
   checkHint: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
-  checkBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 10,
-    minWidth: 80,
-    alignItems: 'center',
-  },
+  checkBtn: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, minWidth: 80, alignItems: 'center' },
   checkBtnSi: { backgroundColor: '#D1FAE5' },
   checkBtnNo: { backgroundColor: '#FEE2E2' },
   checkBtnText: { fontSize: 13, fontWeight: '800' },
   checkBtnTextSi: { color: '#065F46' },
   checkBtnTextNo: { color: '#991B1B' },
-
   fieldWrapper: { marginBottom: 14 },
   fieldLabel: {
     fontSize: 12,
@@ -928,23 +1116,10 @@ const styles = StyleSheet.create({
     color: '#111827',
     minHeight: 100,
   },
-
   formActions: { flexDirection: 'row', gap: 10, marginTop: 6 },
-  deleteBtn: {
-    flex: 1,
-    backgroundColor: '#FEE2E2',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
+  deleteBtn: { flex: 1, backgroundColor: '#FEE2E2', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   deleteBtnText: { fontSize: 15, fontWeight: '600', color: '#DC2626' },
-  saveBtn: {
-    flex: 2,
-    backgroundColor: '#2563EB',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
+  saveBtn: { flex: 2, backgroundColor: '#2563EB', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   saveBtnText: { fontSize: 15, fontWeight: '700', color: '#FFF' },
 });
 
