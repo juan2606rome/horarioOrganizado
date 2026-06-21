@@ -230,6 +230,256 @@ async function getEvents(filters = {}) {
   return result.rows.map(mapEvent);
 }
 
+
+
+// ─────────────────────────────────────────────
+// AUDIT HELPERS
+// ─────────────────────────────────────────────
+
+function generateAuditId() {
+  return `audit_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function isValidAuditType(tipo) {
+  return ['AV1', 'AV2', 'AV3'].includes(tipo);
+}
+
+function mapAudit(row) {
+  return {
+    id: row.id,
+    memberId: row.member_id,
+    memberName: row.member_name,
+    memberColor: row.member_color,
+    memberInitials: row.member_initials,
+    date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : row.date,
+    tipo: row.tipo,
+    cumplido: row.cumplido,
+    detalle: row.detalle || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+
+async function getAuditEvents({ memberId, year, month } = {}) {
+  const values = [];
+  const where = [];
+
+  if (memberId) {
+    values.push(memberId);
+    where.push(`e.member_id = $${values.length}`);
+  }
+
+  if (year) {
+    values.push(Number(year));
+    where.push(`EXTRACT(YEAR FROM e.date) = $${values.length}`);
+  }
+
+  if (month) {
+    values.push(Number(month));
+    where.push(`EXTRACT(MONTH FROM e.date) = $${values.length}`);
+  }
+
+  const sql = `
+    SELECT
+      e.id,
+      e.member_id,
+      m.name AS member_name,
+      m.color AS member_color,
+      m.initials AS member_initials,
+      e.date,
+      e.tipo,
+      e.cumplido,
+      e.detalle,
+      e.created_at,
+      e.updated_at
+    FROM audit_events e
+    JOIN team_members m ON m.id = e.member_id
+    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    ORDER BY e.date ASC, e.created_at ASC
+  `;
+
+  const result = await client.query(sql, values);
+  return result.rows.map(mapAudit);
+}
+
+async function getAuditEventById(id) {
+  const result = await client.query(
+    `
+    SELECT
+      e.id,
+      e.member_id,
+      m.name AS member_name,
+      m.color AS member_color,
+      m.initials AS member_initials,
+      e.date,
+      e.tipo,
+      e.cumplido,
+      e.detalle,
+      e.created_at,
+      e.updated_at
+    FROM audit_events e
+    JOIN team_members m ON m.id = e.member_id
+    WHERE e.id = $1
+    `,
+    [id]
+  );
+
+  return result.rows[0] ? mapAudit(result.rows[0]) : null;
+}
+
+async function createAuditEvent(payload) {
+  const {
+    id,
+    memberId,
+    date,
+    tipo,
+    cumplido = false,
+    detalle = '',
+  } = payload;
+
+  if (!id) throw new Error('id es obligatorio');
+  if (!memberId) throw new Error('memberId es obligatorio');
+  if (!date || !isValidDate(date)) {
+    throw new Error('date debe tener formato YYYY-MM-DD');
+  }
+  if (!isValidAuditType(tipo)) {
+    throw new Error('tipo debe ser AV1, AV2 o AV3');
+  }
+
+  const memberCheck = await client.query(
+    `SELECT id FROM team_members WHERE id = $1`,
+    [memberId]
+  );
+
+  if (!memberCheck.rows[0]) {
+    throw new Error(`memberId no existe: ${memberId}`);
+  }
+
+  await client.query(
+    `
+    INSERT INTO audit_events (
+      id,
+      member_id,
+      date,
+      tipo,
+      cumplido,
+      detalle
+    )
+    VALUES ($1, $2, $3::date, $4, $5, $6)
+    `,
+    [
+      id,
+      memberId,
+      date,
+      tipo,
+      !!cumplido,
+      detalle || '',
+    ]
+  );
+
+  const created = await getAuditEventById(id);
+  if (!created) {
+    throw new Error('No se pudo leer el evento recién creado');
+  }
+
+  return created;
+}
+
+async function updateAuditEvent(id, payload) {
+  const current = await client.query(
+    `SELECT * FROM audit_events WHERE id = $1`,
+    [id]
+  );
+
+  if (!current.rows[0]) {
+    throw new Error('Auditoría no encontrada');
+  }
+
+  const old = current.rows[0];
+
+  const memberId = payload.memberId || old.member_id;
+  const date = payload.date || old.date.toISOString().slice(0, 10);
+  const tipo = payload.tipo || old.tipo;
+  const cumplido =
+    payload.cumplido !== undefined ? !!payload.cumplido : old.cumplido;
+  const detalle =
+    payload.detalle !== undefined ? payload.detalle : old.detalle;
+
+  if (!memberId) throw new Error('memberId es obligatorio');
+  if (!isValidDate(date)) {
+    throw new Error('date debe tener formato YYYY-MM-DD');
+  }
+  if (!isValidAuditType(tipo)) {
+    throw new Error('tipo debe ser AV1, AV2 o AV3');
+  }
+
+  const memberCheck = await client.query(
+    `SELECT id FROM team_members WHERE id = $1`,
+    [memberId]
+  );
+
+  if (!memberCheck.rows[0]) {
+    throw new Error(`memberId no existe: ${memberId}`);
+  }
+
+  await client.query(
+    `
+    UPDATE audit_events
+    SET
+      member_id = $2,
+      date = $3::date,
+      tipo = $4,
+      cumplido = $5,
+      detalle = $6
+    WHERE id = $1
+    `,
+    [
+      id,
+      memberId,
+      date,
+      tipo,
+      cumplido,
+      detalle || '',
+    ]
+  );
+
+  const updated = await getAuditEventById(id);
+  if (!updated) {
+    throw new Error('No se pudo leer el evento actualizado');
+  }
+
+  return updated;
+}
+
+async function deleteAuditEvent(id) {
+  const result = await client.query(
+    `DELETE FROM audit_events WHERE id = $1 RETURNING id`,
+    [id]
+  );
+
+  return result.rowCount > 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // ─────────────────────────────────────────────
 // MEMBERS
 // ─────────────────────────────────────────────
@@ -575,6 +825,67 @@ const server = http.createServer(async (req, res) => {
   const query = parsedUrl.query || {};
 
   try {
+
+
+
+// AUDIT EVENTS
+if (path === '/audit-events' && req.method === 'GET') {
+  const { memberId, year, month } = query;
+
+  if (month && !isValidMonth(month)) {
+    return sendJSON(res, 400, {
+      error: 'month debe estar entre 1 y 12',
+    });
+  }
+
+  if (year && !isValidYear(year)) {
+    return sendJSON(res, 400, {
+      error: 'year inválido',
+    });
+  }
+
+  const audits = await getAuditEvents({
+    memberId: memberId || undefined,
+    year: year || undefined,
+    month: month || undefined,
+  });
+
+  return sendJSON(res, 200, audits);
+}
+
+if (path === '/audit-events' && req.method === 'POST') {
+  const body = await readBody(req);
+  const created = await createAuditEvent(body);
+  return sendJSON(res, 201, created);
+}
+
+if (path.startsWith('/audit-events/') && (req.method === 'PUT' || req.method === 'PATCH')) {
+  const id = path.split('/').filter(Boolean)[1];
+
+  if (!id) {
+    return sendJSON(res, 400, { error: 'ID inválido' });
+  }
+
+  const body = await readBody(req);
+  const updated = await updateAuditEvent(id, body);
+  return sendJSON(res, 200, updated);
+}
+
+if (path.startsWith('/audit-events/') && req.method === 'DELETE') {
+  const id = path.split('/').filter(Boolean)[1];
+
+  if (!id) {
+    return sendJSON(res, 400, { error: 'ID inválido' });
+  }
+
+  const deleted = await deleteAuditEvent(id);
+  return sendJSON(res, 200, { ok: deleted });
+}
+
+
+
+
+
     // ROOT
     if (path === '/') {
       return sendJSON(res, 200, {

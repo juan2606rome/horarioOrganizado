@@ -13,8 +13,19 @@ export interface CalendarEvent {
   departamento: string;
   municipio: string;
   detalle: string;
-createdAt?: string;
-updatedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AuditEvent {
+  id: string;
+  memberId: string;
+  date: string; // YYYY-MM-DD
+  tipo: 'AV1' | 'AV2' | 'AV3';
+  cumplido: boolean;
+  detalle: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface EventType {
