@@ -17,12 +17,18 @@ export default function AuditoriaPage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    CalendarService.getMembers()
-      .then((data) => setMembers(Array.isArray(data) ? data : []))
-      .catch((err) => console.error('Error cargando miembros:', err))
-      .finally(() => setLoading(false));
-  }, []);
+useEffect(() => {
+  CalendarService.getMembers()
+    .then((data) => {
+      const filtered = (Array.isArray(data) ? data : []).filter(
+        (m) => !/\((DIRECTOR|DIRECTORA)\)/i.test(m.name)
+      );
+
+      setMembers(filtered);
+    })
+    .catch((err) => console.error('Error cargando miembros:', err))
+    .finally(() => setLoading(false));
+}, []);
 
   if (loading) {
     return (

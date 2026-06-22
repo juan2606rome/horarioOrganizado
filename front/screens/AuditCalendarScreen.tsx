@@ -340,7 +340,7 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
             <View>
               <Text style={styles.statsTitle}>Resumen de auditorías</Text>
               <Text style={styles.statsSubtitle}>
-                {selectedMember ? selectedMember.name : 'Todos los ingenieros'}
+                {selectedMember ? selectedMember.name : 'Todos los profesionales'}
                 {selectedMonths.length === 1
                   ? ` · ${MONTHS_ES[selectedMonths[0] - 1]}`
                   : selectedMonths.length > 1
