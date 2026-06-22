@@ -1,13 +1,13 @@
 // app/auditoria.tsx
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Platform,
-    SafeAreaView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  Platform,
+  SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 import AuditCalendarScreen from '../screens/AuditCalendarScreen';
 import { CalendarService } from '../services/calendarService';
@@ -45,7 +45,7 @@ export default function AuditoriaPage() {
         </View>
         <View>
           <Text style={styles.title}>Panel de Auditorías</Text>
-          <Text style={styles.subtitle}>AV1 · AV2 · AV3 — Solo administrador</Text>
+          <Text style={styles.subtitle}>AV1 · AV2 · AV3 — Creado por: Alejandra Alvarado</Text>
         </View>
       </View>
 
