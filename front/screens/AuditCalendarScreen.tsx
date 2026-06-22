@@ -100,7 +100,7 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
 
   const memberOptions = useMemo(
     () => [
-      { label: 'Todos los ingenieros', value: '' },
+      { label: 'Todos los profesionales', value: '' },
       ...members.map((m) => ({ label: m.name, value: m.id })),
     ],
     [members],
@@ -596,7 +596,7 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
                           <Text style={styles.memberDot2Text}>{m.initials}</Text>
                         </View>
                       )}
-                      <Text style={styles.dayModalMemberName}>{m?.name || 'Ingeniero'}</Text>
+                      <Text style={styles.dayModalMemberName}>{m?.name || 'Profesional'}</Text>
                     </View>
                     {item.detalle ? (
                       <Text style={styles.dayModalDetalle} numberOfLines={2}>{item.detalle}</Text>
@@ -657,11 +657,11 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
             >
               <View style={styles.formBody}>
                 <CustomPicker
-                  label="Ingeniero"
+                  label="Profesional"
                   value={memberId}
                   options={memberOptions.filter((o) => o.value !== '')}
                   onSelect={setMemberId}
-                  placeholder="Seleccionar ingeniero..."
+                  placeholder="Seleccionar Profesional..."
                   searchable
                 />
 
