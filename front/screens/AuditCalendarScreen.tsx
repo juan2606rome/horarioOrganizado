@@ -1,15 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    Modal,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import CustomPicker from '../components/CustomPicker';
 import { AuditEvent, AuditService, AuditType } from '../services/auditService';
@@ -262,7 +262,7 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
           </View>
 
           {/* Filtro ingeniero */}
-          <Text style={styles.filterLabel}>Ingeniero:</Text>
+          <Text style={styles.filterLabel}>Profesional:</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
             <TouchableOpacity
               style={[styles.chip, !selectedMemberId && styles.chipActive]}
@@ -304,7 +304,7 @@ const AuditCalendarScreen: React.FC<Props> = ({ members }) => {
           </ScrollView>
 
           {/* Filtro mes */}
-          <Text style={[styles.filterLabel, { marginTop: 12 }]}>Mes:</Text>
+          <Text style={[styles.filterLabel, { marginTop: 12 }]}>Administrador:</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
             <TouchableOpacity
               style={[styles.chip, selectedMonths.length === 0 && styles.chipActive]}
