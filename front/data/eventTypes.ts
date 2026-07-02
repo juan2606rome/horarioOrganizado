@@ -79,6 +79,13 @@ export const EVENT_TYPES: EventType[] = [
     textColor: '#831843',
   },
   {
+    id: 'pactos_de_gobernanza',
+    label: 'Pactos de gobernanza',
+    color: 'rgb(219, 39, 195)',
+    bgColor: '#EDE9FE',
+    textColor: '#871d95',
+  },
+  {
     id: 'otra_actividad',
     label: 'Otra actividad',
     color: '#6B7280',
